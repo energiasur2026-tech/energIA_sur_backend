@@ -1,0 +1,27 @@
+# Configuración de despliegue en Netlify.
+#
+# Está acá, versionada, y no solo en el panel de Netlify, para que el
+# despliegue sea reproducible: cualquiera que clone el repo y lo conecte a un
+# sitio nuevo obtiene la misma configuración sin tener que acordarse de
+# tildar nada a mano.
+#
+# Lo decisivo es el plugin: sin él, Netlify publica la carpeta `.next` como si
+# fueran archivos estáticos y las rutas de `/api` devuelven 404. El plugin es
+# el que crea la función que ejecuta Next.js y atiende esas rutas.
+
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[build.environment]
+  # En local se usó Node v24.18.0. Fijarla evita que un cambio del default de
+  # Netlify rompa el build más adelante.
+  NODE_VERSION = "24"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+[functions]
+  # El recolector programado (collect-reading.mts). Es el valor por defecto de
+  # Netlify, declarado explícitamente para que no dependa del default.
+  directory = "netlify/functions"
