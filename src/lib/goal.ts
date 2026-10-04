@@ -59,10 +59,30 @@ const AT_RISK_MARGIN = 1.15;
  * dé ese importe.
  */
 export function budgetToKwh(budgetArs: number): number | null {
+  // Tope del tramo anterior; -1 mientras no se haya descartado ninguno.
+  let topeAnterior = -1;
+
   for (const tier of RESIDENCIAL_SIN_SUBSIDIO) {
     const kwh = (budgetArs - tier.cargoFijo) / tier.valorTramo;
-    if (kwh >= tier.minKwh && kwh <= tier.maxKwh) return round(kwh, 1);
+
+    // El presupuesto no cubre siquiera el cargo fijo de este tramo.
+    if (kwh < 0) continue;
+
+    if (kwh <= tier.maxKwh) {
+      // El resultado cae por debajo del tramo: el presupuesto quedó en el
+      // salto de cargo fijo entre dos tramos (pasar de 100 a 101 kWh sube el
+      // fijo de 15000 a 16000, así que ningún consumo cuesta exactamente lo
+      // que hay entre medio). Lo más que se puede consumir sin pasarse es el
+      // tope del tramo anterior. Antes esto devolvía `null`, como si el
+      // presupuesto fuera imposible.
+      if (topeAnterior >= 0 && kwh < topeAnterior) return round(topeAnterior, 1);
+      return round(kwh, 1);
+    }
+
+    topeAnterior = tier.maxKwh;
   }
+
+  // Ningún tramo alcanza: el presupuesto no cubre el cargo fijo más barato.
   return null;
 }
 

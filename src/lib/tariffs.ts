@@ -41,8 +41,17 @@ export type EnergyCost = {
  * el cargo fijo mensual (p. ej. 1 día -> cargoFijo / 30).
  */
 export function estimateEnergyCost(consumedKwh: number, periodDays: number): EnergyCost {
+  // Los tramos del cuadro se expresan en enteros (0-100, 101-200, ...), así
+  // que entre uno y el siguiente queda un hueco: 100.5 kWh no pertenecía a
+  // ninguno. Buscar por ambos extremos hacía que esos consumos cayeran en el
+  // tramo de reserva —el más caro— y un consumo de 100.5 kWh terminaba
+  // costando más que uno de 150.
+  //
+  // Como los tramos están ordenados y son consecutivos, alcanza con el tope:
+  // el primero cuyo máximo no se supera es el que corresponde. Los bordes
+  // exactos (100, 101, 200, ...) siguen cayendo donde caían antes.
   const tier =
-    RESIDENCIAL_SIN_SUBSIDIO.find((t) => consumedKwh >= t.minKwh && consumedKwh <= t.maxKwh) ??
+    RESIDENCIAL_SIN_SUBSIDIO.find((t) => consumedKwh <= t.maxKwh) ??
     RESIDENCIAL_SIN_SUBSIDIO[RESIDENCIAL_SIN_SUBSIDIO.length - 1];
 
   const fixedCharge = round2((tier.cargoFijo * periodDays) / DAYS_PER_MONTH);
