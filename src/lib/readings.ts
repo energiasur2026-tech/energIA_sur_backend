@@ -1,5 +1,7 @@
 import 'server-only';
 
+import type { RawReading } from '../domain/reading-types';
+
 import { supabase } from './supabase';
 import type { ForecastBasis } from './forecast';
 import type { PeriodSummary, SeriesPoint } from './types';
@@ -136,12 +138,9 @@ export async function getPeriodConsumption(
   };
 }
 
-export type RawReading = {
-  recordedAt: string;
-  voltage: number | null;
-  current: number | null;
-  powerW: number | null;
-};
+// El tipo vive en el dominio para que la lógica de negocio pueda usarlo sin
+// arrastrar este módulo, que trae consigo el cliente de Supabase.
+export type { RawReading };
 
 /**
  * Lecturas posteriores a un instante, en orden cronológico. Las consume el
