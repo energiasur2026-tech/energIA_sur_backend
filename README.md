@@ -25,76 +25,132 @@ sin cambios de comportamiento.
 > `AGENTS.md`: consultar `node_modules/next/dist/docs/` antes de escribir
 > código de Next.
 
+## Qué problema resuelve
+
+Un medidor eléctrico reporta lo que está pasando **ahora**: tensión, corriente,
+potencia y un contador acumulado de energía. No guarda historia, no avisa de
+nada y no dice cuánto va a costar la factura.
+
+Este servicio toma esas lecturas cada pocos minutos y las convierte en las
+cuatro cosas que un usuario necesita:
+
+| Pregunta del usuario | Qué hace el sistema |
+| --- | --- |
+| ¿Cómo viene mi instalación ahora? | Lee el medidor en vivo y lo expone |
+| ¿Cuánto gasté y cuánto me va a costar? | Calcula consumo real y lo valoriza con el cuadro tarifario |
+| ¿Voy a llegar a fin de mes? | Proyecta el consumo y lo compara contra un objetivo |
+| ¿Hubo algún problema eléctrico? | Detecta anomalías de tensión y corriente, y avisa por email |
+
 ## Arquitectura
 
+### Dónde está parado este repo
+
 ```
-Navegador  ──►  FRONTEND (otro repo)  ──rewrite /api/*──►  BACKEND (este repo)
-                                                              │
-                                                              ├──► Supabase (service role)
-                                                              ├──► Tuya Cloud
-                                                              └──► Resend
+Navegador
+   │  (siempre habla con SU dominio: /api/...)
+   ▼
+FRONTEND (otro repo)  ──rewrite /api/*──►  BACKEND (este repo)
+                                              │
+                                              ├──► Supabase (Postgres)
+                                              ├──► Tuya Cloud
+                                              └──► Resend
 ```
 
-El navegador siempre habla con el dominio del frontend; nunca conoce la URL de
-este servicio. Por eso el backend **no lleva CORS**.
+El navegador nunca conoce la URL de este servicio: siempre pide `/api/...` a su
+propio dominio y el frontend lo reenvía del lado del servidor. Por eso acá **no
+hay CORS** y la cookie de sesión viaja sola.
+
+### Cómo está organizado por dentro
+
+Arquitectura hexagonal: la lógica de negocio no sabe que existen Supabase, Tuya
+ni Resend. Les habla a través de **puertos** —interfaces que describen qué
+necesita, no cómo se hace— y los **adaptadores** los implementan del otro lado.
 
 ```
 src/
-  app/api/
-    meter/live               Lectura viva del medidor del usuario + persistencia
-    meter/history            Serie agregada y resumen del período
-    meter/consumption        Consumo real y costo estimado del período
-    meter/collector-status   Última lectura del recolector programado
-    meter/events             Historial de anomalías y umbrales vigentes
-    meter/event-series       Serie alrededor de una anomalía puntual
-    meter/forecast           Proyección de consumo y perfil horario
-    meter/settings           Intervalo de guardado y preferencia de avisos
-    meter/goal               Fija o borra el objetivo mensual
-    meter/home               Contexto del hogar: ambientes y aparatos
-    meters                   Resumen de los medidores del usuario
-    profile                  Datos personales del titular
-    meter/collect            Recolección programada, todos los medidores (requiere secreto)
-  lib/
-    env.ts                       Variables de servidor (Tuya, Supabase, secreto)
-    env-public.ts                Variables públicas de Supabase (para validar la sesión)
-    errors.ts                    MissingEnvError
-    tuya.ts                      Firma HMAC-SHA256 y llamadas a Tuya Cloud
-    phase-a.ts                   Decodificador del data point `phase_a`
-    meter-reading.ts             Lectura + persistencia (compartida live/collect)
-    supabase.ts                  Cliente Supabase de servidor (service role)
-    supabase-server.ts           Cliente Supabase de servidor (lee la sesión)
-    auth.ts                      getCurrentUser() a partir de la cookie de sesión
-    api-auth.ts                  requireMeter(): resuelve el medidor del usuario
-    api-error.ts                 Respuestas de error uniformes
-    meters.ts                    Qué medidor pertenece a qué usuario y sus umbrales
-    anomalies.ts                 Motor de detección (reglas con histéresis)
-    events.ts                    Alta, cierre y consulta de eventos
-    event-types.ts               Tipos y textos de eventos
-    readings.ts                  Alta de lecturas y consultas agregadas
-    forecast.ts                  Proyección de consumo y niveles de confianza
-    goal.ts                      Objetivo mensual: conversiones y avance
-    recommendations.ts           Sugerencias derivadas de las mediciones
-    tariffs.ts                   Cuadro SPSE (Residencial sin subsidio)
-    periods.ts                   Períodos de consumo (hoy / 7 días / 30 días)
-    ranges.ts                    Rangos del histórico y tamaño de cubeta
-    collection-intervals.ts      Opciones de frecuencia de guardado
-    threshold-types.ts           Tipos de umbrales
-    home.ts, home-types.ts, home-catalog.ts   Contexto del hogar y catálogo de aparatos
-    profiles.ts, profile-types.ts             Datos personales del titular
-    mailer.ts                    Envío de correo (Resend)
-    notify.ts                    Cola de avisos de anomalías
-    types.ts                     Tipos compartidos
-supabase/migrations/             Esquema SQL (0001 a 0014)
-netlify/functions/
-  collect-reading.mts            Recolector programado (cron cada 5 min = piso)
+  domain/          ← las reglas del negocio. No importa infraestructura.
+  infrastructure/  ← los adaptadores. Lo único que menciona Supabase/Tuya/Resend.
+  lib/             ← acceso a datos, configuración y puntos de entrada.
+  app/api/         ← las 13 rutas HTTP.
 ```
 
-Algunos archivos de `src/lib` los usa también el frontend (constantes y tipos
-como `collection-intervals`, `home-catalog`, `event-types`, `periods`,
+La dependencia apunta siempre hacia adentro: `app/api` → `lib` →
+`infrastructure` → `domain`. El dominio no depende de nadie.
+
+**Por qué importa, en concreto:** las reglas de detección de anomalías se
+prueban hoy con un array de lecturas y nada más. Antes del refactor, el mismo
+test necesitaba reemplazar tres módulos de base de datos. Comparar
+`tests/anomaly-rules.test.ts` con `tests/anomalies.test.ts` muestra la
+diferencia.
+
+#### `src/domain` — las reglas
+
+Funciones puras: mismas entradas, mismas salidas, sin tocar la base, la red ni
+el reloj.
+
+| Archivo | Qué decide |
+| --- | --- |
+| `anomaly-rules.ts` | Qué es una anomalía: umbrales, histéresis, agrupación, severidad, huecos |
+| `detect-anomalies.ts` | Caso de uso: pide por los puertos, decide con las reglas, aplica el plan |
+| `meter-sampling.ts` | Cuándo toca guardar una lectura y cómo se interpreta la respuesta cruda del medidor |
+| `read-meter.ts` | Caso de uso: leer el medidor y persistir si corresponde |
+| `notify-anomalies.ts` | Qué eventos merecen un aviso y cuándo un envío cierra el asunto |
+| `tariffs.ts` | Cuadro tarifario SPSE y cálculo del costo de energía |
+| `goal.ts` | Objetivo mensual: conversión pesos ↔ kWh, avance, desvío y proyección |
+| `forecast.ts` | Proyección de consumo y niveles de confianza |
+| `recommendations.ts` | Sugerencias derivadas de las mediciones |
+| `periods.ts`, `ranges.ts` | Períodos de consulta y tamaño de cubeta del histórico |
+| `phase-a.ts` | Decodificador del data point crudo del medidor |
+| `ports.ts` | Los contratos con el exterior: lecturas, eventos, medidores, dispositivo, correo |
+
+#### `src/infrastructure` — los adaptadores
+
+Dos archivos, 95 líneas. Son los únicos de todo el camino de negocio que
+mencionan Supabase, Tuya o Resend. Cambiar de base de datos se resolvería acá
+sin tocar una sola regla.
+
+#### `src/lib` — acceso a datos y entrada
+
+Las consultas a Supabase (`readings`, `events`, `meters`, `profiles`, `home`),
+los clientes externos (`supabase`, `tuya`, `mailer`), la configuración (`env`) y
+los puntos de entrada delgados (`anomalies`, `meter-reading`, `notify`) que le
+enchufan los adaptadores al dominio y mantienen las firmas que usan las rutas.
+
+#### `src/app/api` — las rutas
+
+Adaptadores HTTP: validan parámetros, llaman al caso de uso y arman la
+respuesta. Las 13 rutas y sus formatos son el contrato con el frontend y están
+fijados por tests.
+
+```
+supabase/migrations/     Esquema SQL (0001 a 0014)
+netlify/functions/
+  collect-reading.mts    Recolector programado (cron cada 5 min = piso)
+tests/                   171 tests, sin dependencias externas
+```
+
+Algunos archivos de `src/domain` los usa también el frontend (constantes y
+tipos como `collection-intervals`, `home-catalog`, `event-types`, `periods`,
 `ranges`). Hoy están **duplicados** en los dos repos: si se toca una de esas
 constantes, hay que tocarla en ambos. En particular, si el frontend ofrece un
 aparato cuyo id este backend no conoce, `/api/meter/home` lo descarta en
 silencio al guardar.
+
+## Tests
+
+```bash
+npm test          # 171 tests
+npm run typecheck # tipos del código y de los tests
+npm run lint
+```
+
+Corren con el runner nativo de Node 24, **sin dependencias de testing**.
+`tests/_resolver.mjs` traduce en memoria los imports del código a lo que exige
+Node, así los tests se ejecutan sobre el código real sin compilarlo.
+
+Qué cubren: el contrato de las 13 rutas (que el frontend no se rompa), las
+reglas de anomalías, el objetivo mensual, la proyección, el cuadro tarifario,
+el decodificador del medidor y las decisiones de muestreo y aviso.
 
 ## Contrato de la API
 
@@ -153,10 +209,9 @@ npm install
 
 ### 2. Base de datos
 
-Las migraciones son las mismas que usa el sitio original y la base es
-**compartida**: si ya se aplicaron ahí, no hay que volver a correrlas. Para un
-proyecto Supabase nuevo, ejecutar en orden en el SQL Editor
-`supabase/migrations/0001_readings.sql` … `0014_meter_members.sql`:
+Para levantar un proyecto Supabase desde cero, ejecutar las migraciones en
+orden en el SQL Editor, de `supabase/migrations/0001_readings.sql` a
+`0014_meter_members.sql`:
 
 | Archivo | Qué agrega |
 | --- | --- |
@@ -451,17 +506,24 @@ fijarla con `.nvmrc` o la variable `NODE_VERSION`.
 ## Comandos
 
 ```bash
-npm run dev     # desarrollo
-npm run build   # build de producción
-npm run lint    # eslint
-npx tsc --noEmit  # chequeo de tipos
+npm run dev        # desarrollo
+npm test           # los 171 tests
+npm run typecheck  # tipos del código y de los tests
+npm run lint       # eslint
+npm run build      # build de producción
 ```
 
 ## Limitaciones conocidas
 
-- La suscripción gratuita de Tuya IoT Core estaba **vencida al 2026-09-24**
-  (error `28841002`). Mientras siga así, `/api/meter/live` y la recolección
-  responden `502`. El resto de las rutas no depende de Tuya.
-- Etapa 6 del proyecto (asistente conversacional) pendiente.
-- Constantes duplicadas entre este repo y el del frontend (ver *Arquitectura*).
-  Resolverlo con un paquete compartido es una mejora futura.
+- **Constantes duplicadas** entre este repo y el del frontend (ver
+  *Arquitectura*). Resolverlo con un paquete compartido es una mejora futura.
+- **Un solo medidor por cuenta.** `requireMeter()` resuelve el primero; el
+  esquema ya soporta varios y el panel los lista, pero las rutas de medidor
+  todavía no reciben cuál.
+- **Alta de medidores manual**, por SQL. No hay autoservicio.
+- **El umbral de sobrecorriente (15 A) es provisorio**: hay que confirmarlo
+  contra la capacidad real de la instalación antes de confiar en esas alertas.
+- **Etapa 6 del proyecto** (asistente conversacional) pendiente.
+- Si Tuya deja de responder (por ejemplo con la suscripción de IoT Core
+  vencida, error `28841002`), `/api/meter/live` y la recolección devuelven
+  `502`. El resto de las rutas no depende de Tuya.
