@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
 import { apiError } from '@/lib/api-error';
 import { isErrorResponse, requireMeter } from '@/lib/api-auth';
-import { PERIODS, periodRange, resolvePeriod } from '@/lib/periods';
+import { PERIODS, periodRange, resolvePeriod } from '@/domain/periods';
 import { getPeriodConsumption } from '@/lib/readings';
-import { estimateEnergyCost } from '@/lib/tariffs';
+import { estimateEnergyCost } from '@/domain/tariffs';
 
 /**
  * Consumo real y costo estimado de energía para un período.

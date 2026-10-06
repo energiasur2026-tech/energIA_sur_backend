@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { isErrorResponse, requireMeter } from '@/lib/api-auth';
 import { apiError } from '@/lib/api-error';
-import { budgetToKwh, kwhToBudget, type GoalInputMode } from '@/lib/goal';
+import { budgetToKwh, kwhToBudget, type GoalInputMode } from '@/domain/goal';
 import { setGoal } from '@/lib/meters';
 
 /** Techo sensato para una vivienda: por encima, casi seguro es un error de tipeo. */

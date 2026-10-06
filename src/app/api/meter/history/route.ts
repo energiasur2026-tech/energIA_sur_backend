@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { apiError } from '@/lib/api-error';
 import { isErrorResponse, requireMeter } from '@/lib/api-auth';
-import { RANGES, resolveRange } from '@/lib/ranges';
+import { RANGES, resolveRange } from '@/domain/ranges';
 import { getSeries, getSummary } from '@/lib/readings';
 
 export async function GET(request: Request) {

@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { supabase } from './supabase';
-import type { EventRecord, EventSeverity, EventType } from './event-types';
+import type { EventRecord, EventSeverity, EventType } from '../domain/event-types';
 
 export type OpenEventUpdate = {
   lastViolationAt: string;

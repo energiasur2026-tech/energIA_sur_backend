@@ -12,7 +12,7 @@
  */
 import test, { mock, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import type { EventRecord, EventType } from '../src/lib/event-types.ts';
+import type { EventRecord, EventType } from '../src/domain/event-types.ts';
 
 // --------------------------------------------------- sustitutos en memoria
 

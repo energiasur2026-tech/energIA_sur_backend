@@ -9,7 +9,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildForecast, PROJECTION_DAYS, type ForecastBasis } from '../src/lib/forecast.ts';
+import { buildForecast, PROJECTION_DAYS, type ForecastBasis } from '../src/domain/forecast.ts';
 
 const INICIO = '2026-03-01T00:00:00Z';
 

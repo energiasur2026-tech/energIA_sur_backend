@@ -3,8 +3,8 @@ import 'server-only';
 import type { RawReading } from '../domain/reading-types';
 
 import { supabase } from './supabase';
-import type { ForecastBasis } from './forecast';
-import type { PeriodSummary, SeriesPoint } from './types';
+import type { ForecastBasis } from '../domain/forecast';
+import type { PeriodSummary, SeriesPoint } from '../domain/types';
 
 /** Las lecturas se agrupan en cubetas de 5 s para no duplicar filas por polling. */
 export const BUCKET_SECONDS = 5;

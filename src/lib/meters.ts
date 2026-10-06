@@ -1,8 +1,8 @@
 import 'server-only';
 
 import { supabase } from './supabase';
-import type { GoalInputMode } from './goal';
-import type { MeterThresholds } from './threshold-types';
+import type { GoalInputMode } from '../domain/goal';
+import type { MeterThresholds } from '../domain/threshold-types';
 
 export type { MeterThresholds };
 

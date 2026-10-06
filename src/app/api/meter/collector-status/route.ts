@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { isErrorResponse, requireMeter } from '@/lib/api-auth';
 import { apiError } from '@/lib/api-error';
-import { BASE_CRON_MINUTES } from '@/lib/collection-intervals';
+import { BASE_CRON_MINUTES } from '@/domain/collection-intervals';
 import { getLastScheduledReading } from '@/lib/readings';
 
 /**

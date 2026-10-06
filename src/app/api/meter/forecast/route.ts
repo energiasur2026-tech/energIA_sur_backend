@@ -1,15 +1,15 @@
 import { NextResponse } from 'next/server';
 import { isErrorResponse, requireMeter } from '@/lib/api-auth';
 import { apiError } from '@/lib/api-error';
-import { buildForecast } from '@/lib/forecast';
-import { buildGoalProgress, monthBoundsArgentina } from '@/lib/goal';
+import { buildForecast } from '@/domain/forecast';
+import { buildGoalProgress, monthBoundsArgentina } from '@/domain/goal';
 import {
   getDailyEnergy,
   getForecastBasis,
   getHourlyProfile,
   getPeriodConsumption,
 } from '@/lib/readings';
-import { buildRecommendations } from '@/lib/recommendations';
+import { buildRecommendations } from '@/domain/recommendations';
 
 /**
  * Ventana de historia que alimenta la proyección. Más allá de tres meses, un

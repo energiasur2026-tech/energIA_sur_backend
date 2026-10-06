@@ -9,7 +9,7 @@
  */
 import { planAnomalies, type Episode } from './anomaly-rules';
 import type { AnomalyDeps, EventsPort } from './ports';
-import type { MeterThresholds } from '../lib/threshold-types';
+import type { MeterThresholds } from './threshold-types';
 
 /** Lo que el caso de uso necesita saber del medidor. */
 export type MeterForDetection = {

@@ -16,7 +16,7 @@ import {
 } from '../lib/events';
 import { setAnomaliesEvaluatedAt } from '../lib/meters';
 import { getReadingsAfter } from '../lib/readings';
-import type { EventType } from '../lib/event-types';
+import type { EventType } from '../domain/event-types';
 import type { OpenEventSnapshot } from '../domain/anomaly-rules';
 import type { AnomalyDeps } from '../domain/ports';
 

@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { supabase } from './supabase';
-import type { DwellingType, HomeContext, HomeRoom } from './home-types';
+import type { DwellingType, HomeContext, HomeRoom } from '../domain/home-types';
 
 /**
  * Contexto del hogar de un medidor.

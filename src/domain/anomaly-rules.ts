@@ -10,8 +10,8 @@
  * Separarlo así tiene una consecuencia práctica inmediata: estas reglas se
  * pueden probar con un array de lecturas, sin sustituir ningún módulo.
  */
-import type { EventSeverity, EventType } from '../lib/event-types';
-import type { MeterThresholds } from '../lib/threshold-types';
+import type { EventSeverity, EventType } from './event-types';
+import type { MeterThresholds } from './threshold-types';
 import type { RawReading } from './reading-types';
 
 /**

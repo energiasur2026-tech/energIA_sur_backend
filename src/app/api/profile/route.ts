@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { apiError } from '@/lib/api-error';
 import { getCurrentUser } from '@/lib/auth';
-import { EMPTY_PROFILE, PROFILE_MAX_LENGTH, type Profile } from '@/lib/profile-types';
+import { EMPTY_PROFILE, PROFILE_MAX_LENGTH, type Profile } from '@/domain/profile-types';
 import { getProfile, saveProfile } from '@/lib/profiles';
 
 export async function GET() {

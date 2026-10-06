@@ -11,7 +11,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { decodePhaseA } from '../src/lib/phase-a.ts';
+import { decodePhaseA } from '../src/domain/phase-a.ts';
 
 /** Arma el buffer de 10 bytes tal como lo reporta el medidor y lo codifica. */
 function encode(rawVoltage: number, rawCurrent: number, rawPower: number): string {

@@ -10,7 +10,7 @@
  * Nada de este archivo importa `server-only`, Next ni Supabase: es a
  * propósito.
  */
-import type { EventSeverity, EventType } from '../lib/event-types';
+import type { EventRecord, EventSeverity, EventType } from './event-types';
 import type { Aggregates, OpenEventSnapshot } from './anomaly-rules';
 import type { RawReading } from './reading-types';
 
@@ -58,3 +58,47 @@ export type AnomalyDeps = {
   events: EventsPort;
   meters: MetersPort;
 };
+
+// ----------------------------------------------------- lectura del medidor
+
+export type ReadingSource = 'dashboard' | 'scheduled';
+
+/** El medidor físico, visto desde el dominio. Hoy lo implementa Tuya Cloud. */
+export interface DevicePort {
+  details(deviceId: string): Promise<{ online?: boolean }>;
+  status(deviceId: string): Promise<{ code: string; value: unknown }[]>;
+}
+
+export type ReadingToStore = {
+  deviceId: string;
+  recordedAt: Date;
+  voltage: number | null;
+  current: number | null;
+  powerW: number | null;
+  totalEnergyKwh: number | null;
+  rawPhaseA: string | null;
+  source: ReadingSource;
+};
+
+export interface ReadingsStorePort {
+  /** Instante de la última lectura de ese origen, o `null` si no hay ninguna. */
+  lastReadingAt(deviceId: string, source: ReadingSource): Promise<string | null>;
+  save(reading: ReadingToStore): Promise<unknown>;
+}
+
+// -------------------------------------------------------- avisos por email
+
+export interface NotificationsPort {
+  /** Eventos del medidor que todavía no se avisaron. */
+  pending(deviceId: string): Promise<EventRecord[]>;
+  markNotified(ids: number[]): Promise<void>;
+}
+
+export interface MailerPort {
+  /** `skipped` = no hay proveedor configurado; no es un fallo. */
+  sendAnomaly(params: {
+    to: string;
+    meterName: string;
+    event: EventRecord;
+  }): Promise<'sent' | 'skipped' | 'failed'>;
+}

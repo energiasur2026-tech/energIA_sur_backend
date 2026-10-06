@@ -11,7 +11,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { planAnomalies, type OpenEventSnapshot } from '../src/domain/anomaly-rules.ts';
-import type { EventType } from '../src/lib/event-types.ts';
+import type { EventType } from '../src/domain/event-types.ts';
 import type { RawReading } from '../src/domain/reading-types.ts';
 
 const UMBRALES = {

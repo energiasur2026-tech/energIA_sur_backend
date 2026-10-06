@@ -3,8 +3,8 @@ import { apiError } from '@/lib/api-error';
 import { getCurrentUser } from '@/lib/auth';
 import { countActiveEvents } from '@/lib/events';
 import { getHomeContext } from '@/lib/home';
-import { summarizeHome } from '@/lib/home-types';
-import { buildGoalProgress, monthBoundsArgentina } from '@/lib/goal';
+import { summarizeHome } from '@/domain/home-types';
+import { buildGoalProgress, monthBoundsArgentina } from '@/domain/goal';
 import { getMetersForOwner } from '@/lib/meters';
 import { getLatestReading, getPeriodConsumption } from '@/lib/readings';
 

@@ -13,7 +13,7 @@ import {
   kwhToBudget,
   monthBoundsArgentina,
   buildGoalProgress,
-} from '../src/lib/goal.ts';
+} from '../src/domain/goal.ts';
 
 // ---------------------------------------------------------------- conversión
 

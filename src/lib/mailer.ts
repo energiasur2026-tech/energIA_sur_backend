@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { EVENT_DESCRIPTION, EVENT_LABEL, type EventRecord } from './event-types';
+import { EVENT_DESCRIPTION, EVENT_LABEL, type EventRecord } from '../domain/event-types';
 
 /**
  * Envío de correo mediante Resend.

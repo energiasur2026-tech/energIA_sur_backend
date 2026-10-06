@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { isErrorResponse, requireMeter } from '@/lib/api-auth';
 import { apiError } from '@/lib/api-error';
-import { isValidInterval } from '@/lib/collection-intervals';
+import { isValidInterval } from '@/domain/collection-intervals';
 import { setAlertsEnabled, setCollectionInterval } from '@/lib/meters';
 
 export async function GET() {

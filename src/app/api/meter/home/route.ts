@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { isErrorResponse, requireMeter } from '@/lib/api-auth';
 import { apiError } from '@/lib/api-error';
 import { clearHomeContext, getHomeContext, saveHomeContext } from '@/lib/home';
-import { isKnownAppliance } from '@/lib/home-catalog';
+import { isKnownAppliance } from '@/domain/home-catalog';
 import {
   MAX_FLOORS,
   MAX_ROOM_NAME_LENGTH,
@@ -10,7 +10,7 @@ import {
   type DwellingType,
   type HomeContext,
   type HomeRoom,
-} from '@/lib/home-types';
+} from '@/domain/home-types';
 
 export async function GET() {
   try {

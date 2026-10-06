@@ -7,7 +7,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { estimateEnergyCost, RESIDENCIAL_SIN_SUBSIDIO } from '../src/lib/tariffs.ts';
+import { estimateEnergyCost, RESIDENCIAL_SIN_SUBSIDIO } from '../src/domain/tariffs.ts';
 
 test('el cuadro tiene los 5 tramos esperados', () => {
   assert.equal(RESIDENCIAL_SIN_SUBSIDIO.length, 5);

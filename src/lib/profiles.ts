@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { supabase } from './supabase';
-import type { Profile } from './profile-types';
+import type { Profile } from '../domain/profile-types';
 
 /** Perfil del usuario. Devuelve campos vacíos si todavía no cargó nada. */
 export async function getProfile(userId: string): Promise<Profile> {
