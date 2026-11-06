@@ -24,6 +24,7 @@ import type { ForecastBasis } from './forecast';
 import type { EventRecord } from './event-types';
 import type { HomeContext } from './home-types';
 import type { GoalInputMode } from './goal';
+import type { MeterPlacement, MeterRole } from './meter-role';
 import type { Profile } from './profile-types';
 
 /** El medidor completo, tal como lo usan las rutas y los casos de uso. */
@@ -41,6 +42,12 @@ export type MeterRecord = {
   goalKwh: number | null;
   goalInputMode: GoalInputMode;
   anomaliesEvaluatedAt: string | null;
+  /** `central` = tablero principal; `area` = un lugar dentro de la instalación. */
+  role: MeterRole;
+  /** Dónde está instalado, si es de área: "Garage", "Oficina". */
+  areaLabel: string | null;
+  /** De qué central cuelga, si es de área. */
+  parentDeviceId: string | null;
 };
 
 export interface MetersRepository {
@@ -51,6 +58,8 @@ export interface MetersRepository {
   setCollectionInterval(deviceId: string, minutes: number): Promise<void>;
   setAlertsEnabled(deviceId: string, enabled: boolean): Promise<void>;
   setGoal(deviceId: string, goalKwh: number | null, mode: GoalInputMode): Promise<void>;
+  /** Cambia si el medidor es el central de la instalación o cubre un área. */
+  setPlacement(deviceId: string, placement: MeterPlacement): Promise<void>;
 }
 
 export interface ReadingsRepository {

@@ -15,6 +15,7 @@ import {
   setAlertsEnabled,
   setCollectionInterval,
   setGoal,
+  setPlacement,
 } from '../lib/meters';
 import { getProfile, saveProfile } from '../lib/profiles';
 import {
@@ -41,6 +42,9 @@ export const supabaseRepositories: Repositories = {
     },
     setGoal: async (deviceId, goalKwh, mode) => {
       await setGoal(deviceId, goalKwh, mode);
+    },
+    setPlacement: async (deviceId, placement) => {
+      await setPlacement(deviceId, placement);
     },
   },
 

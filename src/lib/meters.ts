@@ -2,6 +2,7 @@ import 'server-only';
 
 import { supabase } from './supabase';
 import type { GoalInputMode } from '../domain/goal';
+import type { MeterPlacement, MeterRole } from '../domain/meter-role';
 import type { MeterThresholds } from '../domain/threshold-types';
 
 export type { MeterThresholds };
@@ -18,12 +19,18 @@ export type Meter = {
   goalKwh: number | null;
   /** En qué unidad pensó la meta: solo afecta cómo se muestra. */
   goalInputMode: GoalInputMode;
+  /** `central` = tablero principal; `area` = un lugar dentro de la instalación. */
+  role: MeterRole;
+  /** Dónde está instalado, si es de área: "Garage", "Oficina". */
+  areaLabel: string | null;
+  /** De qué central cuelga, si es de área. */
+  parentDeviceId: string | null;
   /** Hasta qué instante ya se evaluaron anomalías. `null` = nunca. */
   anomaliesEvaluatedAt: string | null;
 };
 
 const COLUMNS =
-  'device_id, name, low_voltage_v, high_voltage_v, overcurrent_a, gap_minutes, collection_interval_minutes, goal_kwh, goal_input_mode, alerts_enabled, anomalies_evaluated_at';
+  'device_id, name, low_voltage_v, high_voltage_v, overcurrent_a, gap_minutes, collection_interval_minutes, goal_kwh, goal_input_mode, alerts_enabled, anomalies_evaluated_at, role, area_label, parent_device_id';
 
 /**
  * Ids de los medidores a los que `userId` accede: los que le pertenecen y los
@@ -159,5 +166,26 @@ function mapMeter(row: Record<string, unknown>): Meter {
       gapMinutes: Number(row.gap_minutes),
     },
     anomaliesEvaluatedAt: row.anomalies_evaluated_at ? String(row.anomalies_evaluated_at) : null,
+    role: (row.role as MeterRole) ?? 'central',
+    areaLabel: row.area_label ? String(row.area_label) : null,
+    parentDeviceId: row.parent_device_id ? String(row.parent_device_id) : null,
   };
+}
+
+/**
+ * Cambia dónde está instalado un medidor: tablero central de la instalación,
+ * o un área dentro de ella. Las tres columnas se escriben juntas porque la
+ * base exige que sean coherentes entre sí.
+ */
+export async function setPlacement(deviceId: string, placement: MeterPlacement) {
+  const { error } = await supabase()
+    .from('meters')
+    .update({
+      role: placement.role,
+      area_label: placement.areaLabel,
+      parent_device_id: placement.parentDeviceId,
+    })
+    .eq('device_id', deviceId);
+
+  if (error) throw new Error(`No se pudo cambiar la ubicación del medidor: ${error.message}`);
 }
