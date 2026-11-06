@@ -4,10 +4,15 @@ import { apiError } from '@/lib/api-error';
 
 import { isKnownAppliance } from '@/domain/home-catalog';
 import {
+  contextDefinition,
+  contextMatchesRole,
+  isValidContextType,
+} from '@/domain/installation-types';
+import {
   MAX_FLOORS,
   MAX_ROOM_NAME_LENGTH,
   MAX_ROOMS,
-  type DwellingType,
+  normalizeContext,
   type HomeContext,
   type HomeRoom,
 } from '@/domain/home-types';
@@ -39,6 +44,8 @@ export async function PUT(request: Request) {
     if (isErrorResponse(auth)) return auth;
 
     const body = (await request.json().catch(() => null)) as {
+      contextType?: unknown;
+      /** Nombre anterior, cuando el contexto solo podía ser una vivienda. */
       dwellingType?: unknown;
       floors?: unknown;
       rooms?: unknown;
@@ -48,14 +55,40 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: 'Datos no válidos.' }, { status: 400 });
     }
 
-    const dwellingType: DwellingType = body.dwellingType === 'depto' ? 'depto' : 'casa';
+    // `dwellingType` se acepta como alias mientras el frontend viejo siga
+    // desplegado: antes el contexto solo podía ser casa o depto.
+    const tipoCrudo = body.contextType ?? body.dwellingType;
+    if (!isValidContextType(tipoCrudo)) {
+      return NextResponse.json({ error: 'Tipo de lugar no válido.' }, { status: 400 });
+    }
 
-    const floorsRaw = Number(body.floors);
-    if (!Number.isInteger(floorsRaw) || floorsRaw < 1 || floorsRaw > MAX_FLOORS) {
+    // Un medidor en el tablero no puede declararse "garage", y uno de área no
+    // puede declararse "clínica": serían dos formas de decir que mide algo
+    // que no mide.
+    if (!contextMatchesRole(tipoCrudo, auth.meter.role)) {
       return NextResponse.json(
-        { error: `La cantidad de pisos debe estar entre 1 y ${MAX_FLOORS}.` },
+        {
+          error:
+            auth.meter.role === 'central'
+              ? 'Ese tipo corresponde a un área, y este medidor está en el tablero central.'
+              : 'Ese tipo corresponde a una instalación completa, y este medidor cubre un área.',
+        },
         { status: 400 }
       );
+    }
+
+    const definicion = contextDefinition(tipoCrudo);
+
+    let floorsRaw: number | null = null;
+    if (definicion?.hasFloors) {
+      const pisos = Number(body.floors);
+      if (!Number.isInteger(pisos) || pisos < 1 || pisos > MAX_FLOORS) {
+        return NextResponse.json(
+          { error: `La cantidad de pisos debe estar entre 1 y ${MAX_FLOORS}.` },
+          { status: 400 }
+        );
+      }
+      floorsRaw = pisos;
     }
 
     if (!Array.isArray(body.rooms)) {
@@ -109,7 +142,7 @@ export async function PUT(request: Request) {
       return NextResponse.json({ home: null });
     }
 
-    const home: HomeContext = { dwellingType, floors: floorsRaw, rooms };
+    const home: HomeContext = normalizeContext({ contextType: tipoCrudo, floors: floorsRaw, rooms });
     await repos.home.save(auth.meter.deviceId, home);
 
     return NextResponse.json({ home });

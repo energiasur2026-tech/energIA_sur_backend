@@ -1,217 +1,223 @@
 /**
- * Tests del rol del medidor dentro de la instalación. Dominio puro.
+ * Tests de dónde está instalado un medidor y de la taxonomía de contextos.
+ * Dominio puro.
  *
- * La regla que gobierna todo: el medidor de área está eléctricamente aguas
- * abajo del central, así que su energía ya pasó por los dos. El total de la
- * instalación es el central; **nunca se suman**.
+ * La regla que gobierna todo: **los medidores no se relacionan entre sí**. Un
+ * central y un área pueden convivir en la misma infraestructura y cada uno
+ * mide lo suyo. De ahí se desprende cómo se presenta cada uno.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  buildBreakdown,
+  billsAgainstInvoice,
+  includesFixedCharge,
   parsePlacement,
   MAX_AREA_LABEL_LENGTH,
-  type MeasuredMeter,
+  METER_ROLES,
 } from '../src/domain/meter-role.ts';
+import { normalizeContext } from '../src/domain/home-types.ts';
+import {
+  CONTEXTS,
+  contextDefinition,
+  contextMatchesRole,
+  contextsForRole,
+  isValidContextType,
+  isValidPhases,
+  PHASE_LABEL,
+} from '../src/domain/installation-types.ts';
 
-// ------------------------------------------------------------- validación
+// ------------------------------------------------- dónde está el medidor
 
-test('un medidor central no cuelga de nadie ni lleva nombre de área', () => {
-  const r = parsePlacement({ deviceId: 'abc', role: 'central' });
+test('un medidor en el tablero central no lleva nombre de área', () => {
+  const r = parsePlacement({ role: 'central' });
   assert.equal(r.ok, true);
   if (!r.ok) return;
-  assert.deepEqual(r.placement, { role: 'central', areaLabel: null, parentDeviceId: null });
+  assert.deepEqual(r.placement, { role: 'central', areaLabel: null });
 });
 
-test('un medidor de área declara dónde está y de qué central depende', () => {
-  const r = parsePlacement({
-    deviceId: 'abc',
-    role: 'area',
-    areaLabel: 'Terapia intensiva',
-    parentDeviceId: 'central-1',
-  });
+test('un medidor de área declara dónde está instalado', () => {
+  const r = parsePlacement({ role: 'area', areaLabel: 'Terapia intensiva' });
   assert.equal(r.ok, true);
   if (!r.ok) return;
-  assert.deepEqual(r.placement, {
-    role: 'area',
-    areaLabel: 'Terapia intensiva',
-    parentDeviceId: 'central-1',
-  });
+  assert.deepEqual(r.placement, { role: 'area', areaLabel: 'Terapia intensiva' });
+});
+
+test('un área no necesita ningún otro medidor para existir', () => {
+  // El producto también avisa de problemas eléctricos: para eso alcanza con
+  // un medidor en el lugar que importa, sin instrumentar el tablero.
+  const r = parsePlacement({ role: 'area', areaLabel: 'Garage' });
+  assert.equal(r.ok, true);
 });
 
 test('el nombre del área se limpia de espacios', () => {
-  const r = parsePlacement({
-    deviceId: 'abc',
-    role: 'area',
-    areaLabel: '  Garage  ',
-    parentDeviceId: 'c1',
-  });
-  assert.equal(r.ok && r.placement.areaLabel, 'Garage');
+  const r = parsePlacement({ role: 'area', areaLabel: '  Oficina  ' });
+  assert.equal(r.ok && r.placement.areaLabel, 'Oficina');
 });
 
 test('un rol inventado se rechaza', () => {
-  const r = parsePlacement({ deviceId: 'abc', role: 'principal' });
-  assert.equal(r.ok, false);
-  if (r.ok) return;
-  assert.equal(r.error, 'role_invalido');
-});
-
-test('un central con padre se rechaza', () => {
-  const r = parsePlacement({ deviceId: 'abc', role: 'central', parentDeviceId: 'otro' });
-  assert.equal(r.ok === false && r.error, 'central_no_cuelga');
+  assert.equal(parsePlacement({ role: 'principal' }).ok, false);
 });
 
 test('un central con nombre de área se rechaza', () => {
-  const r = parsePlacement({ deviceId: 'abc', role: 'central', areaLabel: 'Garage' });
+  const r = parsePlacement({ role: 'central', areaLabel: 'Garage' });
   assert.equal(r.ok === false && r.error, 'central_sin_area');
 });
 
-test('un área PUEDE existir sin un central', () => {
-  // El producto no sirve solo para estimar la factura: también avisa de
-  // problemas eléctricos. Para eso alcanza con un medidor en el lugar que
-  // importa, sin instrumentar el tablero principal.
-  const r = parsePlacement({ deviceId: 'abc', role: 'area', areaLabel: 'Garage' });
-  assert.equal(r.ok, true);
-  if (!r.ok) return;
-  assert.deepEqual(r.placement, { role: 'area', areaLabel: 'Garage', parentDeviceId: null });
-});
-
 test('un área sin nombre se rechaza', () => {
-  const r = parsePlacement({ deviceId: 'abc', role: 'area', parentDeviceId: 'c1' });
+  const r = parsePlacement({ role: 'area' });
   assert.equal(r.ok === false && r.error, 'area_sin_nombre');
-});
-
-test('un área que cuelga de sí misma se rechaza', () => {
-  const r = parsePlacement({
-    deviceId: 'abc',
-    role: 'area',
-    areaLabel: 'Garage',
-    parentDeviceId: 'abc',
-  });
-  assert.equal(r.ok === false && r.error, 'area_cuelga_de_si_misma');
 });
 
 test('un nombre de área demasiado largo se rechaza', () => {
-  const r = parsePlacement({
-    deviceId: 'abc',
-    role: 'area',
-    areaLabel: 'x'.repeat(MAX_AREA_LABEL_LENGTH + 1),
-    parentDeviceId: 'c1',
-  });
+  const r = parsePlacement({ role: 'area', areaLabel: 'x'.repeat(MAX_AREA_LABEL_LENGTH + 1) });
   assert.equal(r.ok === false && r.error, 'area_nombre_largo');
 });
 
-// --------------------------------------------------------------- desglose
+// ------------------------------------------- qué significa cada rol
 
-function central(consumedKwh: number | null): MeasuredMeter {
-  return {
-    deviceId: 'tablero',
-    name: 'Tablero principal',
-    role: 'central',
-    areaLabel: null,
-    parentDeviceId: null,
-    consumedKwh,
-  };
-}
-
-function area(id: string, label: string, consumedKwh: number | null, padre = 'tablero'): MeasuredMeter {
-  return {
-    deviceId: id,
-    name: label,
-    role: 'area',
-    areaLabel: label,
-    parentDeviceId: padre,
-    consumedKwh,
-  };
-}
-
-test('el total de la instalación es el central, NO la suma', () => {
-  // Es la regla central: el área ya está contada dentro del tablero.
-  const b = buildBreakdown(central(100), [area('a1', 'Oficina', 30)]);
-  assert.equal(b.totalKwh, 100, 'no 130');
+test('solo el central se contrasta contra la factura del mes', () => {
+  assert.equal(billsAgainstInvoice('central'), true);
+  assert.equal(billsAgainstInvoice('area'), false, 'un área es parte de un todo');
 });
 
-test('cada área informa qué parte del total representa', () => {
-  const b = buildBreakdown(central(200), [area('a1', 'Oficina', 50), area('a2', 'Taller', 100)]);
-  assert.deepEqual(
-    b.areas.map((a) => [a.areaLabel, a.consumedKwh, a.shareOfTotalPct]),
-    [
-      ['Oficina', 50, 25],
-      ['Taller', 100, 50],
-    ]
-  );
+test('el cargo fijo solo se suma en el central', () => {
+  // Se paga una vez por instalación: sumarlo en cada área daría un número
+  // inventado.
+  assert.equal(includesFixedCharge('central'), true);
+  assert.equal(includesFixedCharge('area'), false);
 });
 
-test('lo que no cubre ningún área se informa como consumo sin desglosar', () => {
-  // Dice cuánto de la instalación falta instrumentar.
-  const b = buildBreakdown(central(200), [area('a1', 'Oficina', 50), area('a2', 'Taller', 100)]);
-  assert.equal(b.unmeasuredKwh, 50);
+// --------------------------------------------------- tipos de contexto
+
+test('cada contexto pertenece a un solo rol', () => {
+  for (const c of CONTEXTS) {
+    assert.ok(METER_ROLES.includes(c.role), `${c.type} tiene un rol desconocido`);
+  }
 });
 
-test('sin áreas, todo el consumo está sin desglosar', () => {
-  const b = buildBreakdown(central(80), []);
-  assert.equal(b.unmeasuredKwh, 80);
-  assert.deepEqual(b.areas, []);
+test('un medidor central elige entre infraestructuras completas', () => {
+  const tipos = contextsForRole('central').map((c) => c.type);
+  for (const esperado of ['casa', 'depto', 'clinica', 'taller', 'comercio', 'concesionaria']) {
+    assert.ok(tipos.includes(esperado as never), `falta ${esperado}`);
+  }
+  assert.ok(!tipos.includes('area_garage' as never), 'un tablero no es un garage');
 });
 
-test('solo se consideran las áreas que cuelgan de ESE central', () => {
-  const ajena = area('a9', 'De otra instalación', 40, 'otro-tablero');
-  const b = buildBreakdown(central(100), [area('a1', 'Oficina', 30), ajena]);
-  assert.equal(b.areas.length, 1);
-  assert.equal(b.unmeasuredKwh, 70);
+test('un medidor de área elige entre áreas', () => {
+  const tipos = contextsForRole('area').map((c) => c.type);
+  for (const esperado of ['ambiente_unico', 'area_oficina', 'area_taller', 'sector_clinico']) {
+    assert.ok(tipos.includes(esperado as never), `falta ${esperado}`);
+  }
+  assert.ok(!tipos.includes('clinica' as never), 'un área no es una clínica entera');
 });
 
-test('si un área no tiene datos, el resto no se afirma', () => {
-  // Decir "sin desglosar: 70" cuando falta medir un área sería inventar.
-  const b = buildBreakdown(central(100), [area('a1', 'Oficina', 30), area('a2', 'Taller', null)]);
-  assert.equal(b.unmeasuredKwh, null);
-  assert.equal(b.areas.length, 1, 'solo se listan las que sí tienen datos');
+test('un contexto no se puede usar con el rol equivocado', () => {
+  assert.equal(contextMatchesRole('casa', 'central'), true);
+  assert.equal(contextMatchesRole('casa', 'area'), false);
+  assert.equal(contextMatchesRole('area_garage', 'area'), true);
+  assert.equal(contextMatchesRole('area_garage', 'central'), false);
 });
 
-test('sin datos del central no hay total ni resto', () => {
-  const b = buildBreakdown(central(null), [area('a1', 'Oficina', 30)]);
-  assert.equal(b.totalKwh, null);
-  assert.equal(b.unmeasuredKwh, null);
-  assert.equal(b.areas[0].shareOfTotalPct, 0, 'sin total no hay porcentaje que calcular');
+test('solo las viviendas y el edificio de oficinas preguntan por pisos', () => {
+  const conPisos = CONTEXTS.filter((c) => c.hasFloors).map((c) => c.type);
+  assert.deepEqual(conPisos.sort(), ['casa', 'depto', 'oficina_edificio']);
 });
 
-test('si las áreas suman más que el central, se marca como inconsistente', () => {
-  // No debería pasar: indica un área que no cuelga realmente de ese central,
-  // o períodos desalineados entre medidores.
-  const b = buildBreakdown(central(50), [area('a1', 'Oficina', 40), area('a2', 'Taller', 30)]);
-  assert.equal(b.inconsistent, true);
-  assert.equal(b.unmeasuredKwh, 0, 'el resto nunca es negativo');
+test('las subdivisiones se llaman distinto según el contexto', () => {
+  // Llamarle "ambiente" al quirófano de una clínica haría que el formulario
+  // se sienta ajeno, y un formulario ajeno se abandona.
+  assert.equal(contextDefinition('casa')?.subdivision.plural, 'Ambientes');
+  assert.equal(contextDefinition('clinica')?.subdivision.plural, 'Sectores');
+  assert.equal(contextDefinition('taller')?.subdivision.plural, 'Sectores');
 });
 
-test('una instalación coherente no se marca como inconsistente', () => {
-  const b = buildBreakdown(central(100), [area('a1', 'Oficina', 30)]);
-  assert.equal(b.inconsistent, false);
+test('cada contexto ofrece el catálogo de aparatos que le corresponde', () => {
+  assert.equal(contextDefinition('casa')?.catalog, 'vivienda');
+  assert.equal(contextDefinition('area_oficina')?.catalog, 'oficina');
+  assert.equal(contextDefinition('area_taller')?.catalog, 'taller');
+  assert.equal(contextDefinition('sector_clinico')?.catalog, 'clinica');
+  assert.equal(contextDefinition('area_garage')?.catalog, 'garage');
+  assert.equal(contextDefinition('area_cocina')?.catalog, 'cocina_comercial');
 });
 
-test('las áreas que cubren exactamente el total dejan resto cero', () => {
-  const b = buildBreakdown(central(100), [area('a1', 'Oficina', 60), area('a2', 'Taller', 40)]);
-  assert.equal(b.unmeasuredKwh, 0);
-  assert.equal(b.inconsistent, false);
+test('un área de un solo ambiente no se subdivide', () => {
+  // Pedirle sectores a una oficina sería una pregunta sin sentido.
+  assert.equal(contextDefinition('area_oficina')?.hasSubdivisions, false);
+  assert.equal(contextDefinition('ambiente_unico')?.hasSubdivisions, false);
+  assert.equal(contextDefinition('dos_ambientes')?.hasSubdivisions, true);
 });
 
-// ------------------------------------------------- áreas sin medidor central
-
-test('un área autónoma no entra en el desglose de ningún central', () => {
-  const autonoma: MeasuredMeter = {
-    deviceId: 'solo',
-    name: 'Garage',
-    role: 'area',
-    areaLabel: 'Garage',
-    parentDeviceId: null,
-    consumedKwh: 25,
-  };
-  const b = buildBreakdown(central(100), [area('a1', 'Oficina', 30), autonoma]);
-  assert.equal(b.areas.length, 1, 'solo la que declara colgar de este central');
-  assert.equal(b.areas[0].areaLabel, 'Oficina');
-  assert.equal(b.unmeasuredKwh, 70, 'el área autónoma no descuenta del central');
+test('no hay tipos de contexto repetidos', () => {
+  const tipos = CONTEXTS.map((c) => c.type);
+  assert.equal(new Set(tipos).size, tipos.length);
 });
 
-test('un área sigue necesitando decir dónde está, aunque no tenga central', () => {
-  const r = parsePlacement({ deviceId: 'abc', role: 'area' });
-  assert.equal(r.ok === false && r.error, 'area_sin_nombre');
+test('un tipo inventado se rechaza', () => {
+  assert.equal(isValidContextType('casa'), true);
+  assert.equal(isValidContextType('mansion'), false);
+  assert.equal(isValidContextType(7), false);
+});
+
+// ----------------------------------------------------------- las fases
+
+test('el equipo es monofásico o trifásico, nada más', () => {
+  assert.equal(isValidPhases(1), true);
+  assert.equal(isValidPhases(3), true);
+  assert.equal(isValidPhases(2), false);
+  assert.equal(isValidPhases('3'), false);
+});
+
+test('cada cantidad de fases tiene su nombre', () => {
+  assert.equal(PHASE_LABEL[1], 'Monofásico');
+  assert.equal(PHASE_LABEL[3], 'Trifásico');
+});
+
+// --------------------------------------- normalización del contexto
+
+test('una oficina no guarda pisos: la pregunta no aplica', () => {
+  const n = normalizeContext({ contextType: 'area_oficina', floors: 3, rooms: [] });
+  assert.equal(n.floors, null);
+});
+
+test('una casa conserva sus pisos', () => {
+  const n = normalizeContext({ contextType: 'casa', floors: 2, rooms: [] });
+  assert.equal(n.floors, 2);
+});
+
+test('una casa sin pisos declarados asume uno', () => {
+  const n = normalizeContext({ contextType: 'casa', floors: null, rooms: [] });
+  assert.equal(n.floors, 1);
+});
+
+test('un contexto que no se subdivide guarda una sola subdivisión', () => {
+  // Pedirle sectores a una oficina sería una pregunta sin sentido; si el
+  // formulario manda varias, se queda con la primera en vez de inventar.
+  const n = normalizeContext({
+    contextType: 'area_oficina',
+    floors: null,
+    rooms: [
+      { name: 'Oficina', appliances: ['computadora'] },
+      { name: 'De más', appliances: [] },
+    ],
+  });
+  assert.equal(n.rooms.length, 1);
+  assert.equal(n.rooms[0].name, 'Oficina');
+});
+
+test('una clínica conserva todos sus sectores', () => {
+  const n = normalizeContext({
+    contextType: 'clinica',
+    floors: null,
+    rooms: [
+      { name: 'Terapia intensiva', appliances: [] },
+      { name: 'Quirófano', appliances: [] },
+      { name: 'Guardia', appliances: [] },
+    ],
+  });
+  assert.equal(n.rooms.length, 3);
+});
+
+test('un tipo desconocido se devuelve sin tocar', () => {
+  const entrada = { contextType: 'inventado' as never, floors: 9, rooms: [] };
+  assert.deepEqual(normalizeContext(entrada), entrada);
 });

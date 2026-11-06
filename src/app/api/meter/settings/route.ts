@@ -3,6 +3,7 @@ import { isErrorResponse, requireMeter } from '@/lib/api-auth';
 import { apiError } from '@/lib/api-error';
 import { isValidInterval } from '@/domain/collection-intervals';
 import { PLACEMENT_ERROR_MESSAGE, parsePlacement } from '@/domain/meter-role';
+import { isValidPhases } from '@/domain/installation-types';
 import { supabaseRepositories as repos } from '@/infrastructure/supabase-repositories';
 
 export async function GET() {
@@ -18,7 +19,7 @@ export async function GET() {
       thresholds: auth.meter.thresholds,
       role: auth.meter.role,
       areaLabel: auth.meter.areaLabel,
-      parentDeviceId: auth.meter.parentDeviceId,
+      phases: auth.meter.phases,
     });
   } catch (error) {
     return apiError('api/meter/settings', error);
@@ -35,18 +36,13 @@ export async function PUT(request: Request) {
       alertsEnabled?: unknown;
       role?: unknown;
       areaLabel?: unknown;
-      parentDeviceId?: unknown;
+      phases?: unknown;
     } | null;
 
     // Dónde está instalado el medidor: el tablero central de la instalación o
     // un área dentro de ella. Se puede cambiar solo, sin tocar lo demás.
     if (body?.role !== undefined) {
-      const resultado = parsePlacement({
-        deviceId: auth.meter.deviceId,
-        role: body.role,
-        areaLabel: body.areaLabel,
-        parentDeviceId: body.parentDeviceId,
-      });
+      const resultado = parsePlacement({ role: body.role, areaLabel: body.areaLabel });
 
       if (!resultado.ok) {
         return NextResponse.json(
@@ -57,8 +53,27 @@ export async function PUT(request: Request) {
 
       await repos.meters.setPlacement(auth.meter.deviceId, resultado.placement);
 
-      if (body.collectionIntervalMinutes === undefined && body.alertsEnabled === undefined) {
+      if (
+        body.collectionIntervalMinutes === undefined &&
+        body.alertsEnabled === undefined &&
+        body.phases === undefined
+      ) {
         return NextResponse.json(resultado.placement);
+      }
+    }
+
+    // Monofásico o trifásico. Se registra desde el alta aunque el soporte de
+    // lecturas trifásicas todavía no esté implementado.
+    if (body?.phases !== undefined) {
+      if (!isValidPhases(body.phases)) {
+        return NextResponse.json(
+          { error: 'El equipo debe ser monofásico (1) o trifásico (3).' },
+          { status: 400 }
+        );
+      }
+      await repos.meters.setPhases(auth.meter.deviceId, body.phases);
+      if (body.collectionIntervalMinutes === undefined && body.alertsEnabled === undefined) {
+        return NextResponse.json({ phases: body.phases });
       }
     }
 

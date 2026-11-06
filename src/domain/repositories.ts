@@ -25,6 +25,7 @@ import type { EventRecord } from './event-types';
 import type { HomeContext } from './home-types';
 import type { GoalInputMode } from './goal';
 import type { MeterPlacement, MeterRole } from './meter-role';
+import type { MeterPhases } from './installation-types';
 import type { Profile } from './profile-types';
 
 /** El medidor completo, tal como lo usan las rutas y los casos de uso. */
@@ -46,8 +47,8 @@ export type MeterRecord = {
   role: MeterRole;
   /** Dónde está instalado, si es de área: "Garage", "Oficina". */
   areaLabel: string | null;
-  /** De qué central cuelga, si es de área. */
-  parentDeviceId: string | null;
+  /** Cuántas fases mide el equipo: 1 monofásico, 3 trifásico. */
+  phases: MeterPhases;
 };
 
 export interface MetersRepository {
@@ -60,6 +61,8 @@ export interface MetersRepository {
   setGoal(deviceId: string, goalKwh: number | null, mode: GoalInputMode): Promise<void>;
   /** Cambia si el medidor es el central de la instalación o cubre un área. */
   setPlacement(deviceId: string, placement: MeterPlacement): Promise<void>;
+  /** Monofásico o trifásico. */
+  setPhases(deviceId: string, phases: MeterPhases): Promise<void>;
 }
 
 export interface ReadingsRepository {

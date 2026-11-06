@@ -1,7 +1,8 @@
 import 'server-only';
 
 import { supabase } from './supabase';
-import type { DwellingType, HomeContext, HomeRoom } from '../domain/home-types';
+import type { HomeContext, HomeRoom } from '../domain/home-types';
+import type { ContextType } from '../domain/installation-types';
 
 /**
  * Contexto del hogar de un medidor.
@@ -15,7 +16,7 @@ export async function getHomeContext(deviceId: string): Promise<HomeContext | nu
 
   const { data: context, error: contextError } = await client
     .from('home_contexts')
-    .select('dwelling_type, floors')
+    .select('context_type, floors')
     .eq('device_id', deviceId)
     .maybeSingle();
 
@@ -58,8 +59,8 @@ export async function getHomeContext(deviceId: string): Promise<HomeContext | nu
   }
 
   return {
-    dwellingType: context.dwelling_type as DwellingType,
-    floors: Number(context.floors),
+    contextType: context.context_type as ContextType,
+    floors: context.floors === null || context.floors === undefined ? null : Number(context.floors),
     rooms: (rooms ?? []).map<HomeRoom>((room) => ({
       name: String(room.name),
       appliances: appliancesByRoom.get(Number(room.id)) ?? [],
@@ -86,7 +87,7 @@ export async function saveHomeContext(deviceId: string, home: HomeContext): Prom
   const { error: contextError } = await client.from('home_contexts').upsert(
     {
       device_id: deviceId,
-      dwelling_type: home.dwellingType,
+      context_type: home.contextType,
       floors: home.floors,
       updated_at: new Date().toISOString(),
     },

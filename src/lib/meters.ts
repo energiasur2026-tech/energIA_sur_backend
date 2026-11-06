@@ -3,6 +3,7 @@ import 'server-only';
 import { supabase } from './supabase';
 import type { GoalInputMode } from '../domain/goal';
 import type { MeterPlacement, MeterRole } from '../domain/meter-role';
+import type { MeterPhases } from '../domain/installation-types';
 import type { MeterThresholds } from '../domain/threshold-types';
 
 export type { MeterThresholds };
@@ -23,14 +24,14 @@ export type Meter = {
   role: MeterRole;
   /** Dónde está instalado, si es de área: "Garage", "Oficina". */
   areaLabel: string | null;
-  /** De qué central cuelga, si es de área. */
-  parentDeviceId: string | null;
+  /** Cuántas fases mide el equipo: 1 monofásico, 3 trifásico. */
+  phases: MeterPhases;
   /** Hasta qué instante ya se evaluaron anomalías. `null` = nunca. */
   anomaliesEvaluatedAt: string | null;
 };
 
 const COLUMNS =
-  'device_id, name, low_voltage_v, high_voltage_v, overcurrent_a, gap_minutes, collection_interval_minutes, goal_kwh, goal_input_mode, alerts_enabled, anomalies_evaluated_at, role, area_label, parent_device_id';
+  'device_id, name, low_voltage_v, high_voltage_v, overcurrent_a, gap_minutes, collection_interval_minutes, goal_kwh, goal_input_mode, alerts_enabled, anomalies_evaluated_at, role, area_label, phases';
 
 /**
  * Ids de los medidores a los que `userId` accede: los que le pertenecen y los
@@ -168,8 +169,14 @@ function mapMeter(row: Record<string, unknown>): Meter {
     anomaliesEvaluatedAt: row.anomalies_evaluated_at ? String(row.anomalies_evaluated_at) : null,
     role: (row.role as MeterRole) ?? 'central',
     areaLabel: row.area_label ? String(row.area_label) : null,
-    parentDeviceId: row.parent_device_id ? String(row.parent_device_id) : null,
+    phases: Number(row.phases) === 3 ? 3 : 1,
   };
+}
+
+/** Cambia si el equipo es monofásico o trifásico. */
+export async function setPhases(deviceId: string, phases: MeterPhases) {
+  const { error } = await supabase().from('meters').update({ phases }).eq('device_id', deviceId);
+  if (error) throw new Error(`No se pudo cambiar el tipo de equipo: ${error.message}`);
 }
 
 /**
@@ -183,7 +190,6 @@ export async function setPlacement(deviceId: string, placement: MeterPlacement) 
     .update({
       role: placement.role,
       area_label: placement.areaLabel,
-      parent_device_id: placement.parentDeviceId,
     })
     .eq('device_id', deviceId);
 

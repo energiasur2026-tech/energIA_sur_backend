@@ -1,169 +1,98 @@
 /**
- * Rol de un medidor dentro de una instalación. **Dominio puro.**
+ * Dónde está instalado un medidor. **Dominio puro.**
  *
- * Un medidor se instala en el **tablero central** de toda la infraestructura,
- * o en un **área** puntual dentro de ella: el garage de una casa, terapia
- * intensiva de una clínica, la oficina de un taller.
+ * Un medidor va en el **tablero central** de una infraestructura, y entonces
+ * cuantifica todo lo que esa infraestructura consume; o va en un **área**
+ * dentro de ella —una oficina, un garage, un sector clínico— y cuantifica
+ * solo lo que se usa ahí.
  *
- * La distinción es eléctrica, no cosmética: el medidor de área está aguas
- * abajo del central, así que su energía **ya pasó por los dos**. De ahí sale
- * la regla que gobierna todos los cálculos de este archivo:
+ * **Los medidores no se relacionan entre sí.** Un usuario puede tener uno en
+ * el tablero y otro en su oficina, y cada uno mide lo suyo: ninguno resta del
+ * otro ni se desglosa contra el otro. Que compartan la infraestructura es una
+ * circunstancia, no un vínculo.
  *
- *   El total de la instalación es el CENTRAL.
- *   Las áreas dicen qué parte de ese total corresponde a cada lugar.
- *   **Nunca se suma central + áreas**: sería contar dos veces lo mismo.
+ * De ahí se desprende cómo se presenta cada uno:
  *
- * Por eso la tarifa, el costo estimado y el objetivo mensual se calculan
- * contra el central, que es lo que mide la distribuidora. Las áreas se
- * analizan, no se facturan.
+ * - **Central**: su consumo es el de la instalación y se contrasta contra la
+ *   factura del mes, con cargo fijo incluido.
+ * - **Área**: se mide en energía. El costo se puede informar como referencia
+ *   —cuánto de la factura explica ese lugar— pero **sin cargo fijo**, porque
+ *   el cargo fijo se paga una vez por instalación, no por área. Y el objetivo
+ *   mensual de un área es de energía, no de plata.
  */
 
 export type MeterRole = 'central' | 'area';
 
 export const METER_ROLES: MeterRole[] = ['central', 'area'];
 
-/**
- * Lo que distingue a un medidor dentro de su instalación.
- *
- * Un área puede existir **sin** un central: el producto también sirve para
- * avisar de problemas eléctricos, y para eso alcanza con un medidor en el
- * lugar que importa, sin instrumentar el tablero principal.
- */
+export const ROLE_LABEL: Record<MeterRole, string> = {
+  central: 'Tablero central',
+  area: 'Área específica',
+};
+
+/** Lo que distingue a un medidor dentro de su instalación. */
 export type MeterPlacement =
-  | { role: 'central'; areaLabel: null; parentDeviceId: null }
-  | { role: 'area'; areaLabel: string; parentDeviceId: string | null };
+  | { role: 'central'; areaLabel: null }
+  | { role: 'area'; areaLabel: string };
 
 export const MAX_AREA_LABEL_LENGTH = 40;
 
 export type PlacementError =
   | 'role_invalido'
-  | 'central_no_cuelga'
   | 'central_sin_area'
   | 'area_sin_nombre'
-  | 'area_nombre_largo'
-  | 'area_cuelga_de_si_misma';
+  | 'area_nombre_largo';
 
 export const PLACEMENT_ERROR_MESSAGE: Record<PlacementError, string> = {
   role_invalido: 'El tipo de medidor debe ser "central" o "area".',
-  central_no_cuelga: 'Un medidor central no puede depender de otro medidor.',
-  central_sin_area: 'Un medidor central no lleva nombre de área.',
+  central_sin_area: 'Un medidor en el tablero central no lleva nombre de área.',
   area_sin_nombre: 'Un medidor de área tiene que indicar dónde está instalado.',
   area_nombre_largo: `El nombre del área no puede superar los ${MAX_AREA_LABEL_LENGTH} caracteres.`,
-  area_cuelga_de_si_misma: 'Un medidor no puede depender de sí mismo.',
 };
 
 /**
- * Valida y normaliza la ubicación declarada para un medidor.
+ * Valida y normaliza dónde está instalado un medidor.
  *
  * Se valida acá además de en la base porque el formulario no es la única
  * puerta de entrada: la ruta de API también recibe cuerpos armados a mano.
  */
 export function parsePlacement(input: {
-  deviceId: string;
   role: unknown;
   areaLabel?: unknown;
-  parentDeviceId?: unknown;
 }): { ok: true; placement: MeterPlacement } | { ok: false; error: PlacementError } {
   if (input.role !== 'central' && input.role !== 'area') {
     return { ok: false, error: 'role_invalido' };
   }
 
   const etiqueta = typeof input.areaLabel === 'string' ? input.areaLabel.trim() : null;
-  const padre = typeof input.parentDeviceId === 'string' ? input.parentDeviceId.trim() : null;
 
   if (input.role === 'central') {
-    if (padre) return { ok: false, error: 'central_no_cuelga' };
     if (etiqueta) return { ok: false, error: 'central_sin_area' };
-    return { ok: true, placement: { role: 'central', areaLabel: null, parentDeviceId: null } };
+    return { ok: true, placement: { role: 'central', areaLabel: null } };
   }
 
-  // El padre es opcional: un área puede no tener medidor en el tablero.
-  if (padre && padre === input.deviceId) {
-    return { ok: false, error: 'area_cuelga_de_si_misma' };
-  }
   if (!etiqueta) return { ok: false, error: 'area_sin_nombre' };
   if (etiqueta.length > MAX_AREA_LABEL_LENGTH) return { ok: false, error: 'area_nombre_largo' };
 
-  return { ok: true, placement: { role: 'area', areaLabel: etiqueta, parentDeviceId: padre } };
+  return { ok: true, placement: { role: 'area', areaLabel: etiqueta } };
 }
-
-// --------------------------------------------------------- lectura del total
-
-/** Lo mínimo que hace falta de un medidor para armar el desglose. */
-export type MeasuredMeter = {
-  deviceId: string;
-  name: string;
-  role: MeterRole;
-  areaLabel: string | null;
-  parentDeviceId: string | null;
-  /** Consumo del período, en kWh. `null` = sin datos suficientes. */
-  consumedKwh: number | null;
-};
-
-export type AreaShare = {
-  deviceId: string;
-  areaLabel: string;
-  consumedKwh: number;
-  /** Qué porcentaje del total de la instalación representa. */
-  shareOfTotalPct: number;
-};
-
-export type InstallationBreakdown = {
-  /** El consumo de la instalación: el del central, no la suma. */
-  totalKwh: number | null;
-  areas: AreaShare[];
-  /**
-   * Consumo del central que todavía no está desglosado por ningún área.
-   * `null` si no se puede calcular (falta el central o alguna área sin datos).
-   */
-  unmeasuredKwh: number | null;
-  /**
-   * Las áreas suman más que el central. No debería pasar si la instalación
-   * está bien declarada: indica un medidor de área que en realidad no cuelga
-   * de ese central, o un período desalineado entre medidores.
-   */
-  inconsistent: boolean;
-};
 
 /**
- * Arma el desglose de una instalación a partir de su central y sus áreas.
+ * Si el consumo de este medidor se contrasta contra la factura del mes.
  *
- * El total es el del central. Lo que no cubre ningún área se informa aparte
- * como consumo sin desglosar, que es información útil: dice cuánto falta
- * instrumentar.
- *
- * Solo entran las áreas que declaran colgar de ESE central. Un área autónoma
- * —sin medidor en el tablero— no pertenece a ningún desglose: se mira sola.
+ * Solo el central: es lo que mide la distribuidora. Un área explica una parte
+ * del total, pero no es una factura aparte.
  */
-export function buildBreakdown(central: MeasuredMeter, areas: MeasuredMeter[]): InstallationBreakdown {
-  const total = central.consumedKwh;
-
-  const propias = areas.filter(
-    (a) => a.role === 'area' && a.parentDeviceId === central.deviceId
-  );
-
-  const conDatos = propias.filter((a) => a.consumedKwh !== null);
-  const sumaAreas = conDatos.reduce((acc, a) => acc + (a.consumedKwh ?? 0), 0);
-
-  const shares: AreaShare[] = conDatos.map((a) => ({
-    deviceId: a.deviceId,
-    areaLabel: a.areaLabel ?? a.name,
-    consumedKwh: round(a.consumedKwh ?? 0, 3),
-    shareOfTotalPct: total && total > 0 ? round(((a.consumedKwh ?? 0) / total) * 100, 1) : 0,
-  }));
-
-  // Sin total, o con alguna área sin datos, el resto no se puede afirmar.
-  const puedeCalcularResto = total !== null && conDatos.length === propias.length;
-
-  return {
-    totalKwh: total === null ? null : round(total, 3),
-    areas: shares,
-    unmeasuredKwh: puedeCalcularResto ? round(Math.max(total - sumaAreas, 0), 3) : null,
-    inconsistent: total !== null && sumaAreas > total + 0.001,
-  };
+export function billsAgainstInvoice(role: MeterRole): boolean {
+  return role === 'central';
 }
 
-function round(value: number, decimals: number) {
-  const factor = 10 ** decimals;
-  return Math.round(value * factor) / factor;
+/**
+ * Si corresponde sumar el cargo fijo al costo que se muestra.
+ *
+ * El cargo fijo se paga una vez por instalación. Sumarlo en cada área daría
+ * un número inventado.
+ */
+export function includesFixedCharge(role: MeterRole): boolean {
+  return role === 'central';
 }
