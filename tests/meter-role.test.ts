@@ -66,9 +66,14 @@ test('un central con nombre de área se rechaza', () => {
   assert.equal(r.ok === false && r.error, 'central_sin_area');
 });
 
-test('un área sin padre se rechaza', () => {
+test('un área PUEDE existir sin un central', () => {
+  // El producto no sirve solo para estimar la factura: también avisa de
+  // problemas eléctricos. Para eso alcanza con un medidor en el lugar que
+  // importa, sin instrumentar el tablero principal.
   const r = parsePlacement({ deviceId: 'abc', role: 'area', areaLabel: 'Garage' });
-  assert.equal(r.ok === false && r.error, 'area_sin_padre');
+  assert.equal(r.ok, true);
+  if (!r.ok) return;
+  assert.deepEqual(r.placement, { role: 'area', areaLabel: 'Garage', parentDeviceId: null });
 });
 
 test('un área sin nombre se rechaza', () => {
@@ -187,4 +192,26 @@ test('las áreas que cubren exactamente el total dejan resto cero', () => {
   const b = buildBreakdown(central(100), [area('a1', 'Oficina', 60), area('a2', 'Taller', 40)]);
   assert.equal(b.unmeasuredKwh, 0);
   assert.equal(b.inconsistent, false);
+});
+
+// ------------------------------------------------- áreas sin medidor central
+
+test('un área autónoma no entra en el desglose de ningún central', () => {
+  const autonoma: MeasuredMeter = {
+    deviceId: 'solo',
+    name: 'Garage',
+    role: 'area',
+    areaLabel: 'Garage',
+    parentDeviceId: null,
+    consumedKwh: 25,
+  };
+  const b = buildBreakdown(central(100), [area('a1', 'Oficina', 30), autonoma]);
+  assert.equal(b.areas.length, 1, 'solo la que declara colgar de este central');
+  assert.equal(b.areas[0].areaLabel, 'Oficina');
+  assert.equal(b.unmeasuredKwh, 70, 'el área autónoma no descuenta del central');
+});
+
+test('un área sigue necesitando decir dónde está, aunque no tenga central', () => {
+  const r = parsePlacement({ deviceId: 'abc', role: 'area' });
+  assert.equal(r.ok === false && r.error, 'area_sin_nombre');
 });

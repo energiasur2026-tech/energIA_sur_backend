@@ -22,10 +22,16 @@ export type MeterRole = 'central' | 'area';
 
 export const METER_ROLES: MeterRole[] = ['central', 'area'];
 
-/** Lo que distingue a un medidor dentro de su instalación. */
+/**
+ * Lo que distingue a un medidor dentro de su instalación.
+ *
+ * Un área puede existir **sin** un central: el producto también sirve para
+ * avisar de problemas eléctricos, y para eso alcanza con un medidor en el
+ * lugar que importa, sin instrumentar el tablero principal.
+ */
 export type MeterPlacement =
   | { role: 'central'; areaLabel: null; parentDeviceId: null }
-  | { role: 'area'; areaLabel: string; parentDeviceId: string };
+  | { role: 'area'; areaLabel: string; parentDeviceId: string | null };
 
 export const MAX_AREA_LABEL_LENGTH = 40;
 
@@ -33,7 +39,6 @@ export type PlacementError =
   | 'role_invalido'
   | 'central_no_cuelga'
   | 'central_sin_area'
-  | 'area_sin_padre'
   | 'area_sin_nombre'
   | 'area_nombre_largo'
   | 'area_cuelga_de_si_misma';
@@ -42,7 +47,6 @@ export const PLACEMENT_ERROR_MESSAGE: Record<PlacementError, string> = {
   role_invalido: 'El tipo de medidor debe ser "central" o "area".',
   central_no_cuelga: 'Un medidor central no puede depender de otro medidor.',
   central_sin_area: 'Un medidor central no lleva nombre de área.',
-  area_sin_padre: 'Un medidor de área tiene que indicar de qué central depende.',
   area_sin_nombre: 'Un medidor de área tiene que indicar dónde está instalado.',
   area_nombre_largo: `El nombre del área no puede superar los ${MAX_AREA_LABEL_LENGTH} caracteres.`,
   area_cuelga_de_si_misma: 'Un medidor no puede depender de sí mismo.',
@@ -73,8 +77,10 @@ export function parsePlacement(input: {
     return { ok: true, placement: { role: 'central', areaLabel: null, parentDeviceId: null } };
   }
 
-  if (!padre) return { ok: false, error: 'area_sin_padre' };
-  if (padre === input.deviceId) return { ok: false, error: 'area_cuelga_de_si_misma' };
+  // El padre es opcional: un área puede no tener medidor en el tablero.
+  if (padre && padre === input.deviceId) {
+    return { ok: false, error: 'area_cuelga_de_si_misma' };
+  }
   if (!etiqueta) return { ok: false, error: 'area_sin_nombre' };
   if (etiqueta.length > MAX_AREA_LABEL_LENGTH) return { ok: false, error: 'area_nombre_largo' };
 
@@ -125,6 +131,9 @@ export type InstallationBreakdown = {
  * El total es el del central. Lo que no cubre ningún área se informa aparte
  * como consumo sin desglosar, que es información útil: dice cuánto falta
  * instrumentar.
+ *
+ * Solo entran las áreas que declaran colgar de ESE central. Un área autónoma
+ * —sin medidor en el tablero— no pertenece a ningún desglose: se mira sola.
  */
 export function buildBreakdown(central: MeasuredMeter, areas: MeasuredMeter[]): InstallationBreakdown {
   const total = central.consumedKwh;
