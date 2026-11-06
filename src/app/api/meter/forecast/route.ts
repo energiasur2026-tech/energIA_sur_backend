@@ -3,13 +3,9 @@ import { isErrorResponse, requireMeter } from '@/lib/api-auth';
 import { apiError } from '@/lib/api-error';
 import { buildForecast } from '@/domain/forecast';
 import { buildGoalProgress, monthBoundsArgentina } from '@/domain/goal';
-import {
-  getDailyEnergy,
-  getForecastBasis,
-  getHourlyProfile,
-  getPeriodConsumption,
-} from '@/lib/readings';
+
 import { buildRecommendations } from '@/domain/recommendations';
+import { supabaseRepositories as repos } from '@/infrastructure/supabase-repositories';
 
 /**
  * Ventana de historia que alimenta la proyección. Más allá de tres meses, un
@@ -39,14 +35,14 @@ export async function GET() {
     const { start: monthStart } = monthBoundsArgentina(to);
 
     const [basis, monthConsumption, dailyEnergy] = await Promise.all([
-      getForecastBasis(auth.meter.deviceId, from, to),
-      getPeriodConsumption(auth.meter.deviceId, monthStart, to),
-      getDailyEnergy(auth.meter.deviceId, monthStart, to),
+      repos.readings.forecastBasis(auth.meter.deviceId, from, to),
+      repos.readings.periodConsumption(auth.meter.deviceId, monthStart, to),
+      repos.readings.dailyEnergy(auth.meter.deviceId, monthStart, to),
     ]);
 
     const profile =
       basis.daysWithData >= PROFILE_MIN_DAYS
-        ? await getHourlyProfile(auth.meter.deviceId, from, to)
+        ? await repos.readings.hourlyProfile(auth.meter.deviceId, from, to)
         : null;
 
     // El consumo del mes sale de la diferencia del contador acumulado, igual

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { isErrorResponse, requireMeter } from '@/lib/api-auth';
 import { apiError } from '@/lib/api-error';
-import { clearHomeContext, getHomeContext, saveHomeContext } from '@/lib/home';
+
 import { isKnownAppliance } from '@/domain/home-catalog';
 import {
   MAX_FLOORS,
@@ -11,13 +11,14 @@ import {
   type HomeContext,
   type HomeRoom,
 } from '@/domain/home-types';
+import { supabaseRepositories as repos } from '@/infrastructure/supabase-repositories';
 
 export async function GET() {
   try {
     const auth = await requireMeter();
     if (isErrorResponse(auth)) return auth;
 
-    return NextResponse.json({ home: await getHomeContext(auth.meter.deviceId) });
+    return NextResponse.json({ home: await repos.home.get(auth.meter.deviceId) });
   } catch (error) {
     return apiError('api/meter/home', error);
   }
@@ -104,12 +105,12 @@ export async function PUT(request: Request) {
     // Sin ambientes no hay contexto que guardar: se borra lo que hubiera, así
     // "vaciar todo" y "nunca cargué nada" quedan como el mismo estado.
     if (rooms.length === 0) {
-      await clearHomeContext(auth.meter.deviceId);
+      await repos.home.clear(auth.meter.deviceId);
       return NextResponse.json({ home: null });
     }
 
     const home: HomeContext = { dwellingType, floors: floorsRaw, rooms };
-    await saveHomeContext(auth.meter.deviceId, home);
+    await repos.home.save(auth.meter.deviceId, home);
 
     return NextResponse.json({ home });
   } catch (error) {

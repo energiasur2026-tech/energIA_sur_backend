@@ -1,15 +1,15 @@
 import { NextResponse } from 'next/server';
 import { apiError } from '@/lib/api-error';
-import { getCurrentUser } from '@/lib/auth';
+
 import { EMPTY_PROFILE, PROFILE_MAX_LENGTH, type Profile } from '@/domain/profile-types';
-import { getProfile, saveProfile } from '@/lib/profiles';
+import { supabaseRepositories as repos } from '@/infrastructure/supabase-repositories';
 
 export async function GET() {
   try {
-    const user = await getCurrentUser();
+    const user = await repos.session.currentUser();
     if (!user) return NextResponse.json({ error: 'No autenticado.' }, { status: 401 });
 
-    return NextResponse.json({ email: user.email, profile: await getProfile(user.id) });
+    return NextResponse.json({ email: user.email, profile: await repos.profiles.get(user.id) });
   } catch (error) {
     return apiError('api/profile', error);
   }
@@ -17,7 +17,7 @@ export async function GET() {
 
 export async function PUT(request: Request) {
   try {
-    const user = await getCurrentUser();
+    const user = await repos.session.currentUser();
     if (!user) return NextResponse.json({ error: 'No autenticado.' }, { status: 401 });
 
     const body = (await request.json().catch(() => null)) as Partial<Profile> | null;
@@ -39,7 +39,7 @@ export async function PUT(request: Request) {
       );
     }
 
-    await saveProfile(user.id, profile);
+    await repos.profiles.save(user.id, profile);
 
     return NextResponse.json({ profile });
   } catch (error) {

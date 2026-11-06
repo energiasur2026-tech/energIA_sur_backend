@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { isErrorResponse, requireMeter } from '@/lib/api-auth';
 import { apiError } from '@/lib/api-error';
 import { BASE_CRON_MINUTES } from '@/domain/collection-intervals';
-import { getLastScheduledReading } from '@/lib/readings';
+import { supabaseRepositories as repos } from '@/infrastructure/supabase-repositories';
 
 /**
  * Se considera al recolector "al día" si su última escritura entra dentro del
@@ -17,7 +17,7 @@ export async function GET() {
     if (isErrorResponse(auth)) return auth;
 
     const intervalMinutes = auth.meter.collectionIntervalMinutes;
-    const lastScheduledAt = await getLastScheduledReading(auth.meter.deviceId);
+    const lastScheduledAt = await repos.readings.lastScheduledAt(auth.meter.deviceId);
 
     const minutesAgo = lastScheduledAt
       ? (Date.now() - new Date(lastScheduledAt).getTime()) / 60000

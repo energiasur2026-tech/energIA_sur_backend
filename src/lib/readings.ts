@@ -1,6 +1,15 @@
 import 'server-only';
 
 import type { RawReading } from '../domain/reading-types';
+import type {
+  DailyEnergyPoint,
+  HourlyProfilePoint,
+  LatestReading,
+  PeriodConsumption,
+} from '../domain/data-types';
+
+// Las formas de los datos viven en el dominio; acá solo las consultas.
+export type { DailyEnergyPoint, HourlyProfilePoint, LatestReading, PeriodConsumption };
 
 import { supabase } from './supabase';
 import type { ForecastBasis } from '../domain/forecast';
@@ -101,13 +110,6 @@ export async function getSummary(deviceId: string, from: Date, to: Date): Promis
   };
 }
 
-export type PeriodConsumption = {
-  samples: number;
-  firstAt: string | null;
-  lastAt: string | null;
-  firstEnergy: number | null;
-  lastEnergy: number | null;
-};
 
 /**
  * Energía acumulada al inicio y al final del período, tal como la reporta el
@@ -173,9 +175,7 @@ export async function getReadingsAfter(
   }));
 }
 
-export type HourlyProfilePoint = { hour: number; samples: number; avgPowerW: number | null };
 
-export type DailyEnergyPoint = { day: string; lastEnergy: number | null; samples: number };
 
 /** Última lectura del contador de cada día, para la curva de consumo acumulado. */
 export async function getDailyEnergy(
@@ -245,11 +245,6 @@ export async function getHourlyProfile(
   }));
 }
 
-export type LatestReading = {
-  recordedAt: string;
-  voltage: number | null;
-  powerW: number | null;
-} | null;
 
 /** Última lectura guardada, sin importar el origen. */
 export async function getLatestReading(deviceId: string): Promise<LatestReading> {

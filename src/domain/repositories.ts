@@ -1,0 +1,98 @@
+/**
+ * Puertos de acceso a datos.
+ *
+ * Las rutas pedían sus datos llamando directo a los módulos de Supabase. Eso
+ * funcionaba, pero ataba cada ruta al proveedor: para probar una ruta había
+ * que levantar una base, y cambiar de proveedor obligaba a tocar las trece.
+ *
+ * Acá se declara **qué** necesita cada parte del sistema, agrupado por aquello
+ * que representa —medidores, lecturas, eventos, hogar, perfil, sesión—, sin
+ * decir cómo se obtiene. Los adaptadores de `src/infrastructure` lo resuelven
+ * contra Supabase.
+ *
+ * Las firmas replican las que ya existían: el objetivo es invertir la
+ * dependencia, no rediseñar las consultas.
+ */
+import type {
+  DailyEnergyPoint,
+  HourlyProfilePoint,
+  LatestReading,
+  PeriodConsumption,
+} from './data-types';
+import type { PeriodSummary, SeriesPoint } from './types';
+import type { ForecastBasis } from './forecast';
+import type { EventRecord } from './event-types';
+import type { HomeContext } from './home-types';
+import type { GoalInputMode } from './goal';
+import type { Profile } from './profile-types';
+
+/** El medidor completo, tal como lo usan las rutas y los casos de uso. */
+export type MeterRecord = {
+  deviceId: string;
+  name: string;
+  thresholds: {
+    lowVoltageV: number;
+    highVoltageV: number;
+    overcurrentA: number;
+    gapMinutes: number;
+  };
+  collectionIntervalMinutes: number;
+  alertsEnabled: boolean;
+  goalKwh: number | null;
+  goalInputMode: GoalInputMode;
+  anomaliesEvaluatedAt: string | null;
+};
+
+export interface MetersRepository {
+  /** Todos los medidores del sistema. Lo usa el recolector programado. */
+  all(): Promise<MeterRecord[]>;
+  /** Los medidores a los que accede una cuenta: propios y compartidos. */
+  forOwner(userId: string): Promise<MeterRecord[]>;
+  setCollectionInterval(deviceId: string, minutes: number): Promise<void>;
+  setAlertsEnabled(deviceId: string, enabled: boolean): Promise<void>;
+  setGoal(deviceId: string, goalKwh: number | null, mode: GoalInputMode): Promise<void>;
+}
+
+export interface ReadingsRepository {
+  /** Serie agregada por Postgres según el rango y el tamaño de cubeta. */
+  series(deviceId: string, from: Date, to: Date, bucketSeconds: number): Promise<SeriesPoint[]>;
+  summary(deviceId: string, from: Date, to: Date): Promise<PeriodSummary>;
+  periodConsumption(deviceId: string, from: Date, to: Date): Promise<PeriodConsumption>;
+  forecastBasis(deviceId: string, from: Date, to: Date): Promise<ForecastBasis>;
+  hourlyProfile(deviceId: string, from: Date, to: Date): Promise<HourlyProfilePoint[]>;
+  dailyEnergy(deviceId: string, from: Date, to: Date): Promise<DailyEnergyPoint[]>;
+  latest(deviceId: string): Promise<LatestReading>;
+  /** Última lectura del recolector programado, para el indicador de actividad. */
+  lastScheduledAt(deviceId: string): Promise<string | null>;
+}
+
+export interface EventsRepository {
+  list(deviceId: string, limit?: number): Promise<EventRecord[]>;
+  countActive(deviceId: string): Promise<number>;
+}
+
+export interface HomeRepository {
+  get(deviceId: string): Promise<HomeContext | null>;
+  save(deviceId: string, home: HomeContext): Promise<void>;
+  clear(deviceId: string): Promise<void>;
+}
+
+export interface ProfilesRepository {
+  get(userId: string): Promise<Profile>;
+  save(userId: string, profile: Profile): Promise<void>;
+}
+
+export interface SessionPort {
+  /** La cuenta de la sesión en curso, o `null` sin sesión válida. */
+  currentUser(): Promise<{ id: string; email: string | null } | null>;
+}
+
+/** Todo el acceso a datos, en un solo objeto para componer en un lugar. */
+export type Repositories = {
+  meters: MetersRepository;
+  readings: ReadingsRepository;
+  events: EventsRepository;
+  home: HomeRepository;
+  profiles: ProfilesRepository;
+  session: SessionPort;
+};

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { isErrorResponse, requireMeter } from '@/lib/api-auth';
 import { apiError } from '@/lib/api-error';
-import { listEvents } from '@/lib/events';
+import { supabaseRepositories as repos } from '@/infrastructure/supabase-repositories';
 
 /** Historial de anomalías del medidor del usuario, más reciente primero. */
 export async function GET() {
@@ -10,7 +10,7 @@ export async function GET() {
     if (isErrorResponse(auth)) return auth;
 
     return NextResponse.json({
-      events: await listEvents(auth.meter.deviceId),
+      events: await repos.events.list(auth.meter.deviceId),
       // Los umbrales viajan con la respuesta para que la UI pueda explicar
       // contra qué se comparó, en vez de mostrar un límite implícito.
       thresholds: auth.meter.thresholds,

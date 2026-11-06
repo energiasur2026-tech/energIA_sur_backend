@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { isErrorResponse, requireMeter } from '@/lib/api-auth';
 import { apiError } from '@/lib/api-error';
 import { budgetToKwh, kwhToBudget, type GoalInputMode } from '@/domain/goal';
-import { setGoal } from '@/lib/meters';
+import { supabaseRepositories as repos } from '@/infrastructure/supabase-repositories';
 
 /** Techo sensato para una vivienda: por encima, casi seguro es un error de tipeo. */
 const MAX_GOAL_KWH = 20000;
@@ -29,7 +29,7 @@ export async function PUT(request: Request) {
 
     // `null` borra el objetivo.
     if (body?.value === null) {
-      await setGoal(auth.meter.deviceId, null, mode);
+      await repos.meters.setGoal(auth.meter.deviceId, null, mode);
       return NextResponse.json({ goalKwh: null, goalCostArs: null, inputMode: mode });
     }
 
@@ -57,7 +57,7 @@ export async function PUT(request: Request) {
       );
     }
 
-    await setGoal(auth.meter.deviceId, goalKwh, mode);
+    await repos.meters.setGoal(auth.meter.deviceId, goalKwh, mode);
 
     return NextResponse.json({
       goalKwh,

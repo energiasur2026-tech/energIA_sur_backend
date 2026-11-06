@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { apiError } from '@/lib/api-error';
 import { isErrorResponse, requireMeter } from '@/lib/api-auth';
 import { RANGES, resolveRange } from '@/domain/ranges';
-import { getSeries, getSummary } from '@/lib/readings';
+import { supabaseRepositories as repos } from '@/infrastructure/supabase-repositories';
 
 export async function GET(request: Request) {
   try {
@@ -16,8 +16,8 @@ export async function GET(request: Request) {
     const from = new Date(to.getTime() - range.seconds * 1000);
 
     const [series, summary] = await Promise.all([
-      getSeries(meter.meter.deviceId, from, to, range.bucket),
-      getSummary(meter.meter.deviceId, from, to),
+      repos.readings.series(meter.meter.deviceId, from, to, range.bucket),
+      repos.readings.summary(meter.meter.deviceId, from, to),
     ]);
 
     return NextResponse.json({

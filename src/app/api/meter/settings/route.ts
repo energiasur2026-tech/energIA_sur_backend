@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { isErrorResponse, requireMeter } from '@/lib/api-auth';
 import { apiError } from '@/lib/api-error';
 import { isValidInterval } from '@/domain/collection-intervals';
-import { setAlertsEnabled, setCollectionInterval } from '@/lib/meters';
+import { supabaseRepositories as repos } from '@/infrastructure/supabase-repositories';
 
 export async function GET() {
   try {
@@ -33,7 +33,7 @@ export async function PUT(request: Request) {
 
     // El interruptor de avisos se puede cambiar solo, sin tocar el intervalo.
     if (typeof body?.alertsEnabled === 'boolean') {
-      await setAlertsEnabled(auth.meter.deviceId, body.alertsEnabled);
+      await repos.meters.setAlertsEnabled(auth.meter.deviceId, body.alertsEnabled);
       if (body.collectionIntervalMinutes === undefined) {
         return NextResponse.json({ alertsEnabled: body.alertsEnabled });
       }
@@ -47,7 +47,7 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: 'Intervalo no válido.' }, { status: 400 });
     }
 
-    await setCollectionInterval(auth.meter.deviceId, minutes);
+    await repos.meters.setCollectionInterval(auth.meter.deviceId, minutes);
 
     return NextResponse.json({ collectionIntervalMinutes: minutes });
   } catch (error) {

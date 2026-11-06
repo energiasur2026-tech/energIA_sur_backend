@@ -2,8 +2,9 @@ import { NextResponse } from 'next/server';
 import { apiError } from '@/lib/api-error';
 import { isErrorResponse, requireMeter } from '@/lib/api-auth';
 import { PERIODS, periodRange, resolvePeriod } from '@/domain/periods';
-import { getPeriodConsumption } from '@/lib/readings';
+
 import { estimateEnergyCost } from '@/domain/tariffs';
+import { supabaseRepositories as repos } from '@/infrastructure/supabase-repositories';
 
 /**
  * Consumo real y costo estimado de energía para un período.
@@ -21,7 +22,7 @@ export async function GET(request: Request) {
     const key = resolvePeriod(new URL(request.url).searchParams.get('period'));
     const { from, to, days } = periodRange(key);
 
-    const consumption = await getPeriodConsumption(meter.meter.deviceId, from, to);
+    const consumption = await repos.readings.periodConsumption(meter.meter.deviceId, from, to);
 
     const base = {
       period: key,

@@ -4,8 +4,9 @@ import { detectAnomalies } from '@/lib/anomalies';
 import { apiError } from '@/lib/api-error';
 import { collectorSecret } from '@/lib/env';
 import { isPersistDue, readAndStoreMeter } from '@/lib/meter-reading';
-import { getAllMeters } from '@/lib/meters';
+
 import { notifyNewAnomalies } from '@/lib/notify';
+import { supabaseRepositories as repos } from '@/infrastructure/supabase-repositories';
 
 // Debe coincidir con el header que envía netlify/functions/collect-reading.mts.
 // Se repite como literal en ambos lados a propósito: la función programada se
@@ -27,7 +28,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'No autorizado.' }, { status: 401 });
     }
 
-    const meters = await getAllMeters();
+    const meters = await repos.meters.all();
 
     // El cron corre cada 5 minutos, que es el piso; cada medidor guarda según
     // su propio intervalo. Los que todavía no cumplen el suyo se saltean sin

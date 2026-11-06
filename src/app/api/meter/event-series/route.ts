@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { isErrorResponse, requireMeter } from '@/lib/api-auth';
 import { apiError } from '@/lib/api-error';
-import { getSeries } from '@/lib/readings';
+import { supabaseRepositories as repos } from '@/infrastructure/supabase-repositories';
 
 /**
  * Serie de lecturas alrededor de una anomalía puntual.
@@ -47,7 +47,7 @@ export async function GET(request: Request) {
       from: from.toISOString(),
       to: to.toISOString(),
       bucketSeconds,
-      series: await getSeries(auth.meter.deviceId, from, to, bucketSeconds),
+      series: await repos.readings.series(auth.meter.deviceId, from, to, bucketSeconds),
     });
   } catch (error) {
     return apiError('api/meter/event-series', error);

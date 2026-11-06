@@ -1,12 +1,9 @@
 import { NextResponse } from 'next/server';
 import { apiError } from '@/lib/api-error';
-import { getCurrentUser } from '@/lib/auth';
-import { countActiveEvents } from '@/lib/events';
-import { getHomeContext } from '@/lib/home';
+
 import { summarizeHome } from '@/domain/home-types';
 import { buildGoalProgress, monthBoundsArgentina } from '@/domain/goal';
-import { getMetersForOwner } from '@/lib/meters';
-import { getLatestReading, getPeriodConsumption } from '@/lib/readings';
+import { supabaseRepositories as repos } from '@/infrastructure/supabase-repositories';
 
 /**
  * El contexto del hogar es informacion complementaria de la tarjeta: si no se
@@ -19,7 +16,7 @@ import { getLatestReading, getPeriodConsumption } from '@/lib/readings';
  */
 async function safeHomeContext(deviceId: string) {
   try {
-    return await getHomeContext(deviceId);
+    return await repos.home.get(deviceId);
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     console.error(`[api/meters] contexto del hogar de ${deviceId}: ${detail}`);
@@ -36,19 +33,19 @@ async function safeHomeContext(deviceId: string) {
  */
 export async function GET() {
   try {
-    const user = await getCurrentUser();
+    const user = await repos.session.currentUser();
     if (!user) return NextResponse.json({ error: 'No autenticado.' }, { status: 401 });
 
-    const meters = await getMetersForOwner(user.id);
+    const meters = await repos.meters.forOwner(user.id);
     const now = new Date();
     const { start: monthStart } = monthBoundsArgentina(now);
 
     const summaries = await Promise.all(
       meters.map(async (meter) => {
         const [latest, monthConsumption, activeEvents, home] = await Promise.all([
-          getLatestReading(meter.deviceId),
-          getPeriodConsumption(meter.deviceId, monthStart, now),
-          countActiveEvents(meter.deviceId),
+          repos.readings.latest(meter.deviceId),
+          repos.readings.periodConsumption(meter.deviceId, monthStart, now),
+          repos.events.countActive(meter.deviceId),
           safeHomeContext(meter.deviceId),
         ]);
 
