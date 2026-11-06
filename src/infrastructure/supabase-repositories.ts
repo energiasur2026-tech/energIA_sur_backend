@@ -17,6 +17,7 @@ import {
   setGoal,
   setPhases,
   setPlacement,
+  setSensitivity,
 } from '../lib/meters';
 import { getProfile, saveProfile } from '../lib/profiles';
 import {
@@ -49,6 +50,9 @@ export const supabaseRepositories: Repositories = {
     },
     setPhases: async (deviceId, phases) => {
       await setPhases(deviceId, phases);
+    },
+    setSensitivity: async (deviceId, sensitivity) => {
+      await setSensitivity(deviceId, sensitivity);
     },
   },
 

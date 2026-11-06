@@ -4,6 +4,7 @@ import { supabase } from './supabase';
 import type { GoalInputMode } from '../domain/goal';
 import type { MeterPlacement, MeterRole } from '../domain/meter-role';
 import type { MeterPhases } from '../domain/installation-types';
+import { isSensitivity, rangeFor, type Sensitivity } from '../domain/sensitivity';
 import type { MeterThresholds } from '../domain/threshold-types';
 
 export type { MeterThresholds };
@@ -26,12 +27,14 @@ export type Meter = {
   areaLabel: string | null;
   /** Cuántas fases mide el equipo: 1 monofásico, 3 trifásico. */
   phases: MeterPhases;
+  /** Grado de sensibilidad de las alertas de tensión. */
+  sensitivity: Sensitivity;
   /** Hasta qué instante ya se evaluaron anomalías. `null` = nunca. */
   anomaliesEvaluatedAt: string | null;
 };
 
 const COLUMNS =
-  'device_id, name, low_voltage_v, high_voltage_v, overcurrent_a, gap_minutes, collection_interval_minutes, goal_kwh, goal_input_mode, alerts_enabled, anomalies_evaluated_at, role, area_label, phases';
+  'device_id, name, low_voltage_v, high_voltage_v, overcurrent_a, gap_minutes, collection_interval_minutes, goal_kwh, goal_input_mode, alerts_enabled, anomalies_evaluated_at, role, area_label, phases, sensitivity';
 
 /**
  * Ids de los medidores a los que `userId` accede: los que le pertenecen y los
@@ -170,7 +173,26 @@ function mapMeter(row: Record<string, unknown>): Meter {
     role: (row.role as MeterRole) ?? 'central',
     areaLabel: row.area_label ? String(row.area_label) : null,
     phases: Number(row.phases) === 3 ? 3 : 1,
+    sensitivity: isSensitivity(row.sensitivity) ? row.sensitivity : 'personalizada',
   };
+}
+
+/**
+ * Cambia el grado de sensibilidad y, con él, los umbrales de tensión.
+ *
+ * Se escriben juntos a propósito: el grado es la explicación de esos dos
+ * números, y dejarlos desacoplados permitiría estados donde la pantalla dice
+ * "alta" y la detección usa otro rango.
+ */
+export async function setSensitivity(deviceId: string, sensitivity: Sensitivity) {
+  const range = rangeFor(sensitivity);
+
+  const { error } = await supabase()
+    .from('meters')
+    .update(range ? { sensitivity, low_voltage_v: range.lowVoltageV, high_voltage_v: range.highVoltageV } : { sensitivity })
+    .eq('device_id', deviceId);
+
+  if (error) throw new Error(`No se pudo cambiar la sensibilidad: ${error.message}`);
 }
 
 /** Cambia si el equipo es monofásico o trifásico. */

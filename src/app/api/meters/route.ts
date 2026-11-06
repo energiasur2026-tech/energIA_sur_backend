@@ -60,6 +60,11 @@ export async function GET() {
         return {
           deviceId: meter.deviceId,
           name: meter.name,
+          // Sin esto la tarjeta no puede distinguir un medidor del tablero de
+          // uno de área, que es justo lo que cambia cómo se presenta.
+          role: meter.role,
+          areaLabel: meter.areaLabel,
+          phases: meter.phases,
           latest,
           activeEvents,
           home: summarizeHome(home),

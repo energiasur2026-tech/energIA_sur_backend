@@ -221,3 +221,34 @@ test('un tipo desconocido se devuelve sin tocar', () => {
   const entrada = { contextType: 'inventado' as never, floors: 9, rooms: [] };
   assert.deepEqual(normalizeContext(entrada), entrada);
 });
+
+// ------------------------------- sugerencias propias de cada contexto
+
+test('cada contexto que se subdivide sugiere nombres de su actividad', () => {
+  // Ofrecerle "Dormitorio 1" al encargado de un depósito es exactamente el
+  // formulario ajeno que hay que evitar.
+  assert.ok(contextDefinition('casa')?.subdivision.suggestions.includes('Cocina'));
+  assert.ok(contextDefinition('clinica')?.subdivision.suggestions.includes('Terapia intensiva'));
+  assert.ok(contextDefinition('taller')?.subdivision.suggestions.includes('Playa'));
+  assert.ok(contextDefinition('comercio')?.subdivision.suggestions.includes('Vidriera'));
+  assert.ok(contextDefinition('deposito')?.subdivision.suggestions.includes('Carga y descarga'));
+});
+
+test('ningún contexto sugiere nombres de otra actividad', () => {
+  assert.ok(!contextDefinition('deposito')?.subdivision.suggestions.includes('Dormitorio 1'));
+  assert.ok(!contextDefinition('clinica')?.subdivision.suggestions.includes('Living'));
+});
+
+test('todo contexto conocido que se subdivide trae sugerencias propias', () => {
+  // "Otra" es la excepción legítima: si no se sabe qué lugar es, inventar
+  // nombres sería peor que dejar el campo en blanco.
+  const genericos = ['otra_infraestructura', 'otra_area'];
+
+  for (const c of CONTEXTS) {
+    if (!c.hasSubdivisions || genericos.includes(c.type)) continue;
+    assert.ok(
+      c.subdivision.suggestions.length > 0,
+      `${c.type} se subdivide pero no sugiere ningún nombre`
+    );
+  }
+});

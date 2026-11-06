@@ -4,6 +4,7 @@ import { apiError } from '@/lib/api-error';
 import { isValidInterval } from '@/domain/collection-intervals';
 import { PLACEMENT_ERROR_MESSAGE, parsePlacement } from '@/domain/meter-role';
 import { isValidPhases } from '@/domain/installation-types';
+import { isSelectableSensitivity, rangeFor } from '@/domain/sensitivity';
 import { supabaseRepositories as repos } from '@/infrastructure/supabase-repositories';
 
 export async function GET() {
@@ -17,6 +18,7 @@ export async function GET() {
       collectionIntervalMinutes: auth.meter.collectionIntervalMinutes,
       alertsEnabled: auth.meter.alertsEnabled,
       thresholds: auth.meter.thresholds,
+      sensitivity: auth.meter.sensitivity,
       role: auth.meter.role,
       areaLabel: auth.meter.areaLabel,
       phases: auth.meter.phases,
@@ -37,6 +39,7 @@ export async function PUT(request: Request) {
       role?: unknown;
       areaLabel?: unknown;
       phases?: unknown;
+      sensitivity?: unknown;
     } | null;
 
     // Dónde está instalado el medidor: el tablero central de la instalación o
@@ -56,9 +59,34 @@ export async function PUT(request: Request) {
       if (
         body.collectionIntervalMinutes === undefined &&
         body.alertsEnabled === undefined &&
-        body.phases === undefined
+        body.phases === undefined &&
+        body.sensitivity === undefined
       ) {
         return NextResponse.json(resultado.placement);
+      }
+    }
+
+    // Grado de sensibilidad de las alertas de tensión. Reescribe también los
+    // umbrales: el grado es la explicación de esos dos números, y dejarlos
+    // desacoplados permitiría que la pantalla diga "alta" y la detección use
+    // otro rango.
+    if (body?.sensitivity !== undefined) {
+      if (!isSelectableSensitivity(body.sensitivity)) {
+        return NextResponse.json(
+          { error: 'La sensibilidad debe ser "alta", "media" o "baja".' },
+          { status: 400 }
+        );
+      }
+      await repos.meters.setSensitivity(auth.meter.deviceId, body.sensitivity);
+      if (
+        body.collectionIntervalMinutes === undefined &&
+        body.alertsEnabled === undefined &&
+        body.phases === undefined
+      ) {
+        return NextResponse.json({
+          sensitivity: body.sensitivity,
+          thresholds: rangeFor(body.sensitivity),
+        });
       }
     }
 

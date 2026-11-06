@@ -4,6 +4,9 @@ import { estimateEnergyCost, type EnergyCost } from './tariffs';
  * Proyección de consumo. Sin 'server-only': el cálculo es puro y los tipos
  * los usa también la vista.
  *
+ * El costo proyectado sigue la misma regla que el resto: solo un medidor
+ * central lleva cargo fijo, porque se paga una vez por instalación.
+ *
  * Criterio central: el medidor expone un contador de energía **acumulado**,
  * así que la diferencia entre la primera y la última lectura captura toda la
  * energía consumida en el medio, aunque no hayamos muestreado en el medio.
@@ -66,7 +69,7 @@ const MIN_SPAN_DAYS = 1;
 const HIGH_CONFIDENCE_DAYS = 14;
 const MEDIUM_CONFIDENCE_DAYS = 3;
 
-export function buildForecast(basis: ForecastBasis): Forecast {
+export function buildForecast(basis: ForecastBasis, includeFixedCharge = true): Forecast {
   const spanDays = computeSpanDays(basis.firstAt, basis.lastAt);
 
   const common = {
@@ -107,7 +110,7 @@ export function buildForecast(basis: ForecastBasis): Forecast {
     dailyAverageKwh,
     projectionDays: PROJECTION_DAYS,
     projectedKwh,
-    cost: estimateEnergyCost(projectedKwh, PROJECTION_DAYS),
+    cost: estimateEnergyCost(projectedKwh, PROJECTION_DAYS, includeFixedCharge),
     confidence: confidenceFor(spanDays),
   };
 }

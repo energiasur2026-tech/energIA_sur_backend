@@ -37,10 +37,20 @@ export type EnergyCost = {
 
 /**
  * Costo estimado de energía para un consumo dado.
+ *
  * `periodDays` es la duración del período consultado, usada para prorratear
  * el cargo fijo mensual (p. ej. 1 día -> cargoFijo / 30).
+ *
+ * `includeFixedCharge` en `false` devuelve **solo el cargo de energía**. Es lo
+ * que corresponde a un medidor de área: el cargo fijo se paga una vez por
+ * instalación, no por lugar, así que sumarlo en cada área daría un número
+ * inventado. El tramo tarifario se sigue eligiendo igual, según el consumo.
  */
-export function estimateEnergyCost(consumedKwh: number, periodDays: number): EnergyCost {
+export function estimateEnergyCost(
+  consumedKwh: number,
+  periodDays: number,
+  includeFixedCharge = true
+): EnergyCost {
   // Los tramos del cuadro se expresan en enteros (0-100, 101-200, ...), así
   // que entre uno y el siguiente queda un hueco: 100.5 kWh no pertenecía a
   // ninguno. Buscar por ambos extremos hacía que esos consumos cayeran en el
@@ -54,7 +64,9 @@ export function estimateEnergyCost(consumedKwh: number, periodDays: number): Ene
     RESIDENCIAL_SIN_SUBSIDIO.find((t) => consumedKwh <= t.maxKwh) ??
     RESIDENCIAL_SIN_SUBSIDIO[RESIDENCIAL_SIN_SUBSIDIO.length - 1];
 
-  const fixedCharge = round2((tier.cargoFijo * periodDays) / DAYS_PER_MONTH);
+  const fixedCharge = includeFixedCharge
+    ? round2((tier.cargoFijo * periodDays) / DAYS_PER_MONTH)
+    : 0;
   const variableCharge = round2(tier.valorTramo * consumedKwh);
 
   return {

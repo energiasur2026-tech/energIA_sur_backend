@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { isErrorResponse, requireMeter } from '@/lib/api-auth';
 import { apiError } from '@/lib/api-error';
 import { buildForecast } from '@/domain/forecast';
+import { includesFixedCharge } from '@/domain/meter-role';
 import { buildGoalProgress, monthBoundsArgentina } from '@/domain/goal';
 
 import { buildRecommendations } from '@/domain/recommendations';
@@ -66,7 +67,11 @@ export async function GET() {
     });
 
     return NextResponse.json({
-      forecast: buildForecast(basis),
+      // El rol viaja en la respuesta para que la pantalla sepa cómo
+      // presentarla sin tener que pedir los ajustes por separado.
+      role: auth.meter.role,
+      billable: includesFixedCharge(auth.meter.role),
+      forecast: buildForecast(basis, includesFixedCharge(auth.meter.role)),
       profile,
       profileMinDays: PROFILE_MIN_DAYS,
       lookbackDays: LOOKBACK_DAYS,

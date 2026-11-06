@@ -57,6 +57,15 @@ export type SubdivisionLabel = {
   plural: string;
   /** Lo que se le pregunta al usuario al agregar una. */
   prompt: string;
+  /**
+   * Nombres sugeridos para el alta rápida, propios de este contexto.
+   *
+   * No son una lista cerrada: el usuario escribe lo que quiera. Están para
+   * que el caso común se resuelva tocando, sin teclear. Ofrecerle
+   * "Dormitorio 1" al encargado de un depósito es exactamente el formulario
+   * ajeno que hay que evitar.
+   */
+  suggestions: readonly string[];
 };
 
 export type ContextDefinition = {
@@ -88,16 +97,43 @@ const AMBIENTES: SubdivisionLabel = {
   singular: 'Ambiente',
   plural: 'Ambientes',
   prompt: '¿Qué ambientes tiene?',
+  suggestions: ['Cocina', 'Living', 'Dormitorio 1', 'Dormitorio 2', 'Baño', 'Garage'],
 };
-const SECTORES: SubdivisionLabel = {
+const SECTORES_CLINICA: SubdivisionLabel = {
   singular: 'Sector',
   plural: 'Sectores',
   prompt: '¿Qué sectores tiene?',
+  suggestions: ['Terapia intensiva', 'Quirófano', 'Guardia', 'Internación', 'Laboratorio', 'Administración'],
+};
+const SECTORES_TALLER: SubdivisionLabel = {
+  singular: 'Sector',
+  plural: 'Sectores',
+  prompt: '¿Qué sectores tiene?',
+  suggestions: ['Taller', 'Depósito', 'Oficina', 'Playa', 'Pintura'],
+};
+const SECTORES_COMERCIO: SubdivisionLabel = {
+  singular: 'Sector',
+  plural: 'Sectores',
+  prompt: '¿Qué sectores tiene?',
+  suggestions: ['Salón', 'Depósito', 'Oficina', 'Cocina', 'Vidriera'],
+};
+const SECTORES_OFICINA: SubdivisionLabel = {
+  singular: 'Sector',
+  plural: 'Sectores',
+  prompt: '¿Qué sectores tiene?',
+  suggestions: ['Recepción', 'Oficinas', 'Sala de reuniones', 'Cocina', 'Servidores'],
+};
+const SECTORES_DEPOSITO: SubdivisionLabel = {
+  singular: 'Sector',
+  plural: 'Sectores',
+  prompt: '¿Qué sectores tiene?',
+  suggestions: ['Almacenamiento', 'Carga y descarga', 'Cámara de frío', 'Oficina'],
 };
 const ESPACIOS: SubdivisionLabel = {
   singular: 'Espacio',
   plural: 'Espacios',
   prompt: '¿Qué espacios querés registrar?',
+  suggestions: [],
 };
 
 export const CONTEXTS: ContextDefinition[] = [
@@ -126,7 +162,7 @@ export const CONTEXTS: ContextDefinition[] = [
     role: 'central',
     hasFloors: false,
     hasSubdivisions: true,
-    subdivision: SECTORES,
+    subdivision: SECTORES_CLINICA,
     catalog: 'clinica',
   },
   {
@@ -135,7 +171,7 @@ export const CONTEXTS: ContextDefinition[] = [
     role: 'central',
     hasFloors: false,
     hasSubdivisions: true,
-    subdivision: SECTORES,
+    subdivision: SECTORES_TALLER,
     catalog: 'taller',
   },
   {
@@ -144,7 +180,7 @@ export const CONTEXTS: ContextDefinition[] = [
     role: 'central',
     hasFloors: false,
     hasSubdivisions: true,
-    subdivision: SECTORES,
+    subdivision: SECTORES_COMERCIO,
     catalog: 'comercio',
   },
   {
@@ -153,7 +189,7 @@ export const CONTEXTS: ContextDefinition[] = [
     role: 'central',
     hasFloors: false,
     hasSubdivisions: true,
-    subdivision: SECTORES,
+    subdivision: SECTORES_COMERCIO,
     catalog: 'comercio',
   },
   {
@@ -162,7 +198,7 @@ export const CONTEXTS: ContextDefinition[] = [
     role: 'central',
     hasFloors: true,
     hasSubdivisions: true,
-    subdivision: SECTORES,
+    subdivision: SECTORES_OFICINA,
     catalog: 'oficina',
   },
   {
@@ -171,7 +207,7 @@ export const CONTEXTS: ContextDefinition[] = [
     role: 'central',
     hasFloors: false,
     hasSubdivisions: true,
-    subdivision: SECTORES,
+    subdivision: SECTORES_DEPOSITO,
     catalog: 'deposito',
   },
   {
@@ -246,7 +282,7 @@ export const CONTEXTS: ContextDefinition[] = [
     role: 'area',
     hasFloors: false,
     hasSubdivisions: false,
-    subdivision: SECTORES,
+    subdivision: SECTORES_CLINICA,
     catalog: 'clinica',
   },
   {

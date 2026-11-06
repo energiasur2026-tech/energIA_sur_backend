@@ -4,6 +4,7 @@ import { isErrorResponse, requireMeter } from '@/lib/api-auth';
 import { PERIODS, periodRange, resolvePeriod } from '@/domain/periods';
 
 import { estimateEnergyCost } from '@/domain/tariffs';
+import { includesFixedCharge } from '@/domain/meter-role';
 import { supabaseRepositories as repos } from '@/infrastructure/supabase-repositories';
 
 /**
@@ -25,6 +26,7 @@ export async function GET(request: Request) {
     const consumption = await repos.readings.periodConsumption(meter.meter.deviceId, from, to);
 
     const base = {
+      role: meter.meter.role,
       period: key,
       label: PERIODS[key].label,
       from: from.toISOString(),
@@ -54,7 +56,10 @@ export async function GET(request: Request) {
     }
 
     const consumedKwh = round(consumption.lastEnergy! - consumption.firstEnergy!, 3);
-    const cost = estimateEnergyCost(consumedKwh, days);
+    // Un medidor de área no lleva cargo fijo: se paga una vez por
+    // instalación, no por lugar. Su costo es informativo —cuánto de la
+    // factura explica ese lugar— y no una factura aparte.
+    const cost = estimateEnergyCost(consumedKwh, days, includesFixedCharge(meter.meter.role));
 
     return NextResponse.json({
       ...base,
@@ -62,6 +67,8 @@ export async function GET(request: Request) {
       reason: null,
       consumedKwh,
       cost,
+      /** `false` en un medidor de área: el costo no incluye el cargo fijo. */
+      billable: includesFixedCharge(meter.meter.role),
     });
   } catch (error) {
     return apiError('api/meter/consumption', error);
