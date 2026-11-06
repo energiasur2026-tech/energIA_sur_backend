@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { isErrorResponse, requireMeter } from '@/lib/api-auth';
 import { apiError } from '@/lib/api-error';
 
-import { isKnownAppliance } from '@/domain/home-catalog';
+import { isKnownApplianceAnywhere } from '@/domain/catalogs';
 import {
   contextDefinition,
   contextMatchesRole,
@@ -126,7 +126,7 @@ export async function PUT(request: Request) {
         ? [
             ...new Set(
               (raw.appliances as unknown[]).filter(
-                (id): id is string => typeof id === 'string' && isKnownAppliance(id)
+                (id): id is string => typeof id === 'string' && isKnownApplianceAnywhere(id)
               )
             ),
           ]
