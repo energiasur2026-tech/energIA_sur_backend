@@ -128,3 +128,11 @@ test('la diferencia entre ambos es exactamente el cargo fijo prorrateado', () =>
 test('por defecto el cargo fijo se incluye: no rompe lo que ya existía', () => {
   assert.deepEqual(estimateEnergyCost(100, 30), estimateEnergyCost(100, 30, true));
 });
+
+test('la lista de grados elegibles no incluye "personalizada"', () => {
+  // Si la incluyera, buscar su rango daría undefined: no tiene.
+  for (const grado of SELECTABLE_SENSITIVITIES) {
+    assert.notEqual(grado, 'personalizada');
+    assert.ok(rangeFor(grado), `${grado} debería tener un rango`);
+  }
+});

@@ -20,7 +20,11 @@
 export type Sensitivity = 'alta' | 'media' | 'baja' | 'personalizada';
 
 /** Los grados que el usuario puede elegir. `personalizada` no se elige: se hereda. */
-export const SELECTABLE_SENSITIVITIES: Sensitivity[] = ['alta', 'media', 'baja'];
+export const SELECTABLE_SENSITIVITIES: Exclude<Sensitivity, 'personalizada'>[] = [
+  'alta',
+  'media',
+  'baja',
+];
 
 export type VoltageRange = { lowVoltageV: number; highVoltageV: number };
 
@@ -66,7 +70,7 @@ export function rangeFor(sensitivity: Sensitivity): VoltageRange | null {
  */
 export function sensitivityOf(range: VoltageRange): Sensitivity {
   for (const grado of SELECTABLE_SENSITIVITIES) {
-    const preset = SENSITIVITY_RANGES[grado as Exclude<Sensitivity, 'personalizada'>];
+    const preset = SENSITIVITY_RANGES[grado];
     if (preset.lowVoltageV === range.lowVoltageV && preset.highVoltageV === range.highVoltageV) {
       return grado;
     }

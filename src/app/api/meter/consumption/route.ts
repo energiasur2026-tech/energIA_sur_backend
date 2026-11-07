@@ -27,6 +27,8 @@ export async function GET(request: Request) {
 
     const base = {
       role: meter.meter.role,
+      /** `false` en un medidor de área: el costo no incluye el cargo fijo. */
+      billable: includesFixedCharge(meter.meter.role),
       period: key,
       label: PERIODS[key].label,
       from: from.toISOString(),
@@ -67,8 +69,6 @@ export async function GET(request: Request) {
       reason: null,
       consumedKwh,
       cost,
-      /** `false` en un medidor de área: el costo no incluye el cargo fijo. */
-      billable: includesFixedCharge(meter.meter.role),
     });
   } catch (error) {
     return apiError('api/meter/consumption', error);
