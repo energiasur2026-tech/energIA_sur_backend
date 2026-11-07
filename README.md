@@ -321,6 +321,75 @@ set -a; source .env.local; set +a; npx next start -p 3200
 - Cuando falta un valor se devuelve `null`, nunca cero.
 - La agregación del histórico se resuelve en SQL, no trayendo filas a Node.
 
+## Dónde se instala el medidor
+
+Un medidor va en el **tablero central** de una infraestructura, y entonces
+cuantifica todo lo que esa infraestructura consume; o va en un **área** dentro
+de ella —una oficina, un garage, un sector clínico— y cuantifica solo lo que
+se usa ahí.
+
+**Los medidores no se relacionan entre sí.** Un usuario puede tener uno en el
+tablero y otro en su oficina: cada uno mide lo suyo, ninguno resta del otro ni
+se desglosa contra el otro. Que compartan la infraestructura es una
+circunstancia, no un vínculo. No hay jerarquía en el esquema y no debe
+construirse una.
+
+De ahí se desprende cómo se presenta cada uno:
+
+| | Central | Área |
+| --- | --- | --- |
+| Qué mide | Toda la instalación | Un lugar dentro de ella |
+| Se contrasta contra la factura | Sí | No |
+| Cargo fijo | Se suma | **No**: se paga una vez por instalación |
+| Unidad principal | Pesos | kWh |
+| Objetivo mensual | kWh o pesos | kWh |
+
+Un medidor de área **puede existir solo**, sin ninguno en el tablero: el
+producto también avisa de problemas eléctricos, y para eso alcanza con un
+medidor en el lugar que importa.
+
+### El contexto de la instalación
+
+Cada medidor declara qué tipo de lugar cubre. Las opciones dependen de dónde
+esté instalado:
+
+- **Central:** casa, departamento, clínica, taller, comercio, concesionaria,
+  edificio de oficinas, depósito, otra.
+- **Área:** un ambiente, dos ambientes, oficina, taller, garage, depósito,
+  sector clínico, cocina, otra.
+
+`src/domain/installation-types.ts` define para cada tipo si tiene sentido
+preguntar por pisos, si se subdivide, **cómo se llaman esas subdivisiones en
+pantalla** —ambientes en una casa, sectores en una clínica— qué nombres sugerir
+y qué catálogo de aparatos ofrecer. La API valida que el tipo corresponda al
+rol: un medidor del tablero no puede declararse "garage".
+
+### Catálogos de aparatos
+
+Ocho, uno por actividad: vivienda, oficina, taller, comercio, clínica, garage,
+depósito y cocina comercial. Ofrecerle "pava eléctrica" al encargado de un
+depósito hace que el formulario se sienta ajeno, y un formulario ajeno se
+abandona.
+
+Los ids son **globales**: "heladera" significa lo mismo en una casa que en un
+comercio, así un análisis puede agruparlos. La validación del servidor usa el
+índice completo y no el del contexto actual, para que cambiar el tipo de lugar
+no borre los aparatos ya cargados.
+
+Los `typicalWatts` son órdenes de magnitud de referencia, **no mediciones**:
+sirven para ordenar por impacto probable, nunca para calcular un consumo.
+
+### Monofásico o trifásico
+
+Cada medidor registra cuántas fases mide. **El soporte de lecturas trifásicas
+todavía no está implementado**: el equipo no está definido, así que no se
+modela cómo se guardan sus tres fases. El dato se pide en el alta para no
+rehacer después el recorrido del usuario.
+
+Cuando se implemente, habrá que guardar tres tensiones y tres corrientes por
+lectura, umbrales por fase, y aparecerá un tipo de alerta que hoy no existe:
+el desbalance entre fases.
+
 ## Consumo y costo
 
 `/api/meter/consumption` calcula el consumo real del período como la diferencia
@@ -333,7 +402,9 @@ medidor ya expone un contador acumulado real.
 - **Alcance:** solo cargo de energía. Agua, cloaca y alumbrado quedan fuera por
   decisión explícita, no por omisión — ver `src/lib/tariffs.ts`.
 - **Cargo fijo:** es mensual; se prorratea según los días reales del período
-  (`cargoFijo × días / 30`).
+  (`cargoFijo × días / 30`). **Solo se suma en un medidor central**: se paga
+  una vez por instalación, no por área. La respuesta informa `billable` para
+  que la pantalla sepa si el costo es una factura o una referencia.
 - **Si no hay al menos dos lecturas en el período**, o el contador de energía
   retrocedió (medidor reiniciado o reemplazado), no se estima nada: la
   respuesta explica por qué en vez de devolver un número inventado.
@@ -351,9 +422,39 @@ lecturas que escribió el sondeo del frontend entre dos ciclos.
 | Sobrecorriente | Corriente por encima del umbral | 15 A |
 | Sin lecturas | Intervalo sin ninguna lectura | 15 min |
 
-Los umbrales de tensión son la tolerancia de ±8% sobre 220 V nominales que
-aplica ENRE a usuarios de baja tensión. Viven en la tabla `meters`, uno por
-medidor, y se ajustan por SQL.
+### Grado de sensibilidad
+
+Los umbrales son dos números con decimales que nadie quiere elegir a mano, y
+pedírselos al usuario garantiza que no los toque nunca. En su lugar se ofrece
+una decisión que sí puede tomar: **cuán seguido quiere enterarse**.
+
+| Grado | Rango aceptable | Para qué |
+| --- | --- | --- |
+| Alta | 210 – 230 V | Desviaciones chicas. Equipos delicados |
+| Media | 205 – 235 V | La mayoría de los casos |
+| Baja | 200 – 240 V | Solo desviaciones grandes. Redes inestables |
+
+A mayor sensibilidad, **más estrecho** el rango. El grado y los umbrales se
+escriben juntos (`PUT /api/meter/settings` con `{"sensitivity": "alta"}`):
+dejarlos desacoplados permitiría que la pantalla diga "alta" y la detección
+use otro rango.
+
+`personalizada` significa que los umbrales se ajustaron a mano y ningún preset
+debe pisarlos. Es el estado de los medidores anteriores a esta función, que
+conservan la tolerancia de ±8% sobre 220 V nominales que aplica ENRE a
+usuarios de baja tensión (202,4 – 237,6 V). Esa tolerancia no coincide con
+ninguno de los tres grados, y cambiarles el criterio de alerta en una
+migración, sin que nadie lo pida, sería modificar en silencio cuándo suena una
+alarma.
+
+`suggestedFor(contextType)` propone un grado según el lugar: **alta** en una
+clínica, donde una caída en terapia intensiva no es lo mismo que en un
+depósito; **baja** en un taller, donde las máquinas grandes producen caídas al
+arrancar y avisar de cada una llenaría la casilla de ruido.
+
+> Son umbrales de **aviso del producto**, no límites normativos. Que una
+> tensión salga del rango elegido no significa que haya una condición
+> peligrosa: significa que el usuario pidió enterarse.
 
 > El umbral de sobrecorriente (15 A) es **provisorio**: hay que confirmarlo
 > contra la capacidad real de la instalación antes de confiar en esas alertas.
@@ -517,9 +618,14 @@ npm run build      # build de producción
 
 - **Constantes duplicadas** entre este repo y el del frontend (ver
   *Arquitectura*). Resolverlo con un paquete compartido es una mejora futura.
-- **Un solo medidor por cuenta.** `requireMeter()` resuelve el primero; el
-  esquema ya soporta varios y el panel los lista, pero las rutas de medidor
-  todavía no reciben cuál.
+- **Un solo medidor por cuenta en las rutas de medidor.** `requireMeter()`
+  resuelve el primero; el esquema soporta varios y `/api/meters` los lista con
+  su rol, pero las rutas de un medidor puntual todavía no reciben cuál.
+  Es el bloqueo principal para que central y área convivan de verdad.
+- **La tarifa está fija en el código** (SPSE, residencial sin subsidio). No
+  hay distribuidoras configurables, y eso es requisito de la geolocalización.
+- **El soporte trifásico no está implementado**: solo se registra cuántas
+  fases tiene el equipo.
 - **Alta de medidores manual**, por SQL. No hay autoservicio.
 - **El umbral de sobrecorriente (15 A) es provisorio**: hay que confirmarlo
   contra la capacidad real de la instalación antes de confiar en esas alertas.
