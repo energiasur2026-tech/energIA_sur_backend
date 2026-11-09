@@ -35,7 +35,9 @@ const CONTRATO: Record<string, string[]> = {
   'meter/home': ['GET', 'PUT'],
   'meter/settings': ['GET', 'PUT'],
   'meter/goal': ['PUT'],
-  meters: ['GET'],
+  // POST y DELETE son el alta y la baja de un medidor: agregados, no
+  // cambian ninguno de los contratos que el frontend ya consume.
+  meters: ['GET', 'POST', 'DELETE'],
   profile: ['GET', 'PUT'],
   'meter/collect': ['POST'],
 };
@@ -58,12 +60,13 @@ test('el contrato tiene las 13 rutas, ni una más ni una menos', () => {
   assert.equal(Object.keys(CONTRATO).length, 13);
 });
 
-test('en total son 11 GET, 4 PUT y 1 POST', () => {
+test('en total son 11 GET, 4 PUT, 2 POST y 1 DELETE', () => {
   const todos = Object.values(CONTRATO).flat();
   const cuenta = (m: string) => todos.filter((x) => x === m).length;
   assert.equal(cuenta('GET'), 11);
   assert.equal(cuenta('PUT'), 4);
-  assert.equal(cuenta('POST'), 1);
+  assert.equal(cuenta('POST'), 2, 'recolección y alta de medidor');
+  assert.equal(cuenta('DELETE'), 1, 'baja de medidor');
 });
 
 // ----------------------------------------------------- respuestas de error

@@ -4,6 +4,7 @@ import { supabase } from './supabase';
 import type { GoalInputMode } from '../domain/goal';
 import type { MeterPlacement, MeterRole } from '../domain/meter-role';
 import type { MeterPhases } from '../domain/installation-types';
+import { canView, type AccessLevel } from '../domain/device-linking';
 import {
   isSensitivity,
   rangeFor,
@@ -245,4 +246,116 @@ export async function setPlacement(deviceId: string, placement: MeterPlacement) 
     .eq('device_id', deviceId);
 
   if (error) throw new Error(`No se pudo cambiar la ubicación del medidor: ${error.message}`);
+}
+
+/**
+ * Qué acceso tiene una cuenta sobre un medidor.
+ *
+ * Es la base del aislamiento entre clientes: toda ruta que reciba un
+ * `deviceId` del exterior tiene que pasar por acá antes de leer o escribir
+ * nada. Sin esto, conocer un identificador alcanzaría para ver datos ajenos.
+ */
+export async function accessLevelFor(userId: string, deviceId: string): Promise<AccessLevel> {
+  const owned = await supabase()
+    .from('meters')
+    .select('device_id')
+    .eq('device_id', deviceId)
+    .eq('owner_id', userId)
+    .maybeSingle();
+
+  if (owned.error) throw new Error(`No se pudo resolver el acceso: ${owned.error.message}`);
+  if (owned.data) return 'owner';
+
+  const shared = await supabase()
+    .from('meter_members')
+    .select('device_id')
+    .eq('device_id', deviceId)
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (shared.error) throw new Error(`No se pudo resolver el acceso: ${shared.error.message}`);
+  return shared.data ? 'member' : 'none';
+}
+
+/**
+ * Si un medidor ya está vinculado a alguna cuenta.
+ *
+ * Deliberadamente **no** devuelve a quién: confirmarle a un desconocido que
+ * cierto identificador existe y está tomado ya es información de más.
+ */
+export async function isLinked(deviceId: string): Promise<boolean> {
+  const { data, error } = await supabase()
+    .from('meters')
+    .select('device_id')
+    .eq('device_id', deviceId)
+    .maybeSingle();
+
+  if (error) throw new Error(`No se pudo verificar el medidor: ${error.message}`);
+  return data !== null;
+}
+
+/** Vincula un medidor a una cuenta. Falla si ya estaba vinculado. */
+export async function linkMeter(params: {
+  deviceId: string;
+  ownerId: string;
+  name: string;
+  phases: MeterPhases;
+}): Promise<Meter> {
+  const { data, error } = await supabase()
+    .from('meters')
+    .insert({
+      device_id: params.deviceId,
+      owner_id: params.ownerId,
+      name: params.name,
+      phases: params.phases,
+    })
+    .select(COLUMNS)
+    .single();
+
+  if (error) throw new Error(`No se pudo vincular el medidor: ${error.message}`);
+  return mapMeter(data as Record<string, unknown>);
+}
+
+/**
+ * Desvincula un medidor.
+ *
+ * El borrado en cascada se lleva el contexto del lugar y las cuentas
+ * invitadas. **Las lecturas y los eventos quedan**, porque `readings` no
+ * depende de `meters`: volver a vincular el mismo medidor recupera su
+ * historia entera.
+ */
+export async function unlinkMeter(deviceId: string): Promise<void> {
+  const { error } = await supabase().from('meters').delete().eq('device_id', deviceId);
+  if (error) throw new Error(`No se pudo desvincular el medidor: ${error.message}`);
+}
+
+/** Cuántas lecturas hay guardadas de un medidor, esté vinculado o no. */
+export async function countReadingsOf(deviceId: string): Promise<number> {
+  const { count, error } = await supabase()
+    .from('readings')
+    .select('id', { count: 'exact', head: true })
+    .eq('device_id', deviceId);
+
+  if (error) throw new Error(`No se pudieron contar las lecturas: ${error.message}`);
+  return count ?? 0;
+}
+
+/**
+ * Un medidor puntual, si la cuenta tiene acceso.
+ *
+ * `null` cuando no existe o no es suyo: los dos casos se responden igual
+ * afuera, porque si difirieran, probar identificadores diría cuáles están
+ * tomados.
+ */
+export async function getAccessibleMeter(userId: string, deviceId: string): Promise<Meter | null> {
+  if (!canView(await accessLevelFor(userId, deviceId))) return null;
+
+  const { data, error } = await supabase()
+    .from('meters')
+    .select(COLUMNS)
+    .eq('device_id', deviceId)
+    .maybeSingle();
+
+  if (error) throw new Error(`No se pudo leer el medidor: ${error.message}`);
+  return data ? mapMeter(data as Record<string, unknown>) : null;
 }

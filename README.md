@@ -273,7 +273,53 @@ al frontend. Si no se define, se usa `URL` igual que antes.
 
 ### Vincular un medidor a una cuenta
 
-No hay autoservicio de alta: es una operación manual por SQL.
+```
+POST   /api/meters                  { deviceId, name?, phases? }
+DELETE /api/meters?deviceId=...
+```
+
+El identificador es el `device_id` de Tuya. **Funciona como un secreto
+compartido**: está impreso en el equipo y no se publica en ningún lado. No es
+un emparejamiento fuerte —Tuya no da un código rotativo que se muestre en el
+dispositivo— y conviene saberlo en vez de suponer lo contrario.
+
+Sobre esa base, tres validaciones en orden, cada una evitando el trabajo de la
+siguiente:
+
+| Qué se valida | Si falla |
+| --- | --- |
+| La forma del identificador | `400` |
+| Que no esté ya vinculado | `409`, **sin decir a quién** |
+| Que Tuya lo conozca | `404` si no existe, `502` si Tuya no responde |
+
+Los dos últimos son distintos a propósito: "no existe" no se reintenta, "Tuya
+no responde" sí.
+
+**Solo el dueño desvincula.** Un invitado que se va deja de ver el medidor,
+pero no se lo saca a quien lo instaló. Un medidor ajeno y uno inexistente
+responden igual (`404`): si difirieran, probar identificadores diría cuáles
+están tomados.
+
+**Desvincular pierde la configuración, no las mediciones.** `readings` no
+depende de `meters`, así que las lecturas y los eventos sobreviven y volver a
+vincular el mismo medidor recupera la historia entera. Lo que se borra en
+cascada es el contexto del lugar, sus subdivisiones, los aparatos y las
+cuentas invitadas. La respuesta informa `keptReadings` para que la pantalla
+pueda advertirlo **antes**, no después.
+
+### Elegir de qué medidor se habla
+
+Las rutas de medidor aceptan `?deviceId=`. Sin ese parámetro resuelven el
+primero accesible, que es el comportamiento de siempre: una pantalla que
+todavía no elige medidor sigue funcionando igual.
+
+Toda ruta que reciba un `deviceId` del exterior pasa por `accessLevelFor()`
+antes de leer o escribir nada. Es la base del aislamiento entre cuentas: sin
+eso, conocer un identificador alcanzaría para ver datos ajenos.
+
+### Alta manual por SQL
+
+Sigue siendo posible, para dar de alta un medidor sin pasar por la app:
 
 ```sql
 insert into public.meters (device_id, owner_id, name)
