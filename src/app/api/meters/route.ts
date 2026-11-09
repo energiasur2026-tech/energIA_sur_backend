@@ -73,6 +73,12 @@ export async function GET() {
           role: meter.role,
           areaLabel: meter.areaLabel,
           phases: meter.phases,
+          /**
+           * Si esta cuenta lo vinculó. Solo el dueño puede desvincularlo, así
+           * que sin este dato la pantalla ofrecería una acción que termina en
+           * 403. Se informa el permiso, no el id del dueño.
+           */
+          isOwner: meter.ownerId === user.id,
           latest,
           activeEvents,
           home: summarizeHome(home),

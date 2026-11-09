@@ -53,6 +53,8 @@ export type MeterRecord = {
   phases: MeterPhases;
   /** Grado de sensibilidad de las alertas de tensión. */
   sensitivity: Sensitivity;
+  /** Quién lo vinculó. No se expone en la API: deriva permisos, nada más. */
+  ownerId: string;
 };
 
 export interface MetersRepository {

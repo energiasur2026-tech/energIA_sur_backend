@@ -35,12 +35,14 @@ export type Meter = {
   phases: MeterPhases;
   /** Grado de sensibilidad de las alertas de tensión. */
   sensitivity: Sensitivity;
+  /** Quién lo vinculó. No se expone en la API: solo se usa para derivar permisos. */
+  ownerId: string;
   /** Hasta qué instante ya se evaluaron anomalías. `null` = nunca. */
   anomaliesEvaluatedAt: string | null;
 };
 
 const COLUMNS =
-  'device_id, name, low_voltage_v, high_voltage_v, overcurrent_a, gap_minutes, collection_interval_minutes, goal_kwh, goal_input_mode, alerts_enabled, anomalies_evaluated_at, role, area_label, phases, sensitivity';
+  'device_id, owner_id, name, low_voltage_v, high_voltage_v, overcurrent_a, gap_minutes, collection_interval_minutes, goal_kwh, goal_input_mode, alerts_enabled, anomalies_evaluated_at, role, area_label, phases, sensitivity';
 
 /**
  * Ids de los medidores a los que `userId` accede: los que le pertenecen y los
@@ -180,6 +182,7 @@ function mapMeter(row: Record<string, unknown>): Meter {
     areaLabel: row.area_label ? String(row.area_label) : null,
     phases: Number(row.phases) === 3 ? 3 : 1,
     sensitivity: isSensitivity(row.sensitivity) ? row.sensitivity : 'personalizada',
+    ownerId: String(row.owner_id),
   };
 }
 
