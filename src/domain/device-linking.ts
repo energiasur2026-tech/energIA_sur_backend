@@ -99,13 +99,26 @@ export function canView(access: AccessLevel): boolean {
  * - **El contexto y los invitados se borran.** Dependen del medidor con
  *   borrado en cascada: el tipo de lugar, sus subdivisiones, los aparatos y
  *   las cuentas invitadas desaparecen.
+ * - **Los ajustes del propio medidor también se borran**, porque se van con
+ *   la fila: el intervalo de guardado, los umbrales, la sensibilidad, el
+ *   objetivo y la preferencia de avisos. Al revincular se reponen con los
+ *   valores iniciales de `meter-defaults.ts`.
  *
  * Es decir: desvincular pierde *la configuración*, no *las mediciones*. Quien
  * lo haga tiene que saberlo antes, no después.
+ *
+ * Esta lista estaba incompleta y costó caro. Decía solo lo de arriba, pensada
+ * desde las tablas con cascada, y se olvidaba de las columnas de la propia
+ * fila. Un medidor revinculado quedó guardando cada 6 horas en vez de cada 5
+ * minutos y el histórico dejó de crecer; los umbrales se resetearon en el
+ * mismo movimiento y no se notó, porque los defaults de la base coincidían
+ * con los que tenía ese medidor.
  */
 export const UNLINK_CONSEQUENCES = {
   keepsReadings: true,
   keepsEvents: true,
   dropsContext: true,
   dropsMembers: true,
+  /** Intervalo, umbrales, sensibilidad, objetivo y avisos. */
+  dropsMeterSettings: true,
 } as const;

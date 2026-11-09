@@ -99,3 +99,10 @@ test('desvincular pierde la configuración, no las mediciones', () => {
   assert.equal(UNLINK_CONSEQUENCES.dropsContext, true);
   assert.equal(UNLINK_CONSEQUENCES.dropsMembers, true);
 });
+
+test('la advertencia incluye los ajustes del medidor, no solo el contexto', () => {
+  // Esto faltaba. El cartel de la aplicación avisaba de menos de lo que
+  // realmente se pierde: el intervalo de guardado se iba con la fila, y un
+  // medidor revinculado dejó de guardar lecturas sin que nada diera error.
+  assert.equal(UNLINK_CONSEQUENCES.dropsMeterSettings, true);
+});

@@ -5,6 +5,7 @@ import type { GoalInputMode } from '../domain/goal';
 import type { MeterPlacement, MeterRole } from '../domain/meter-role';
 import type { MeterPhases } from '../domain/installation-types';
 import { canView, type AccessLevel } from '../domain/device-linking';
+import { initialMeterSettings } from '../domain/meter-defaults';
 import {
   isSensitivity,
   rangeFor,
@@ -297,13 +298,24 @@ export async function isLinked(deviceId: string): Promise<boolean> {
   return data !== null;
 }
 
-/** Vincula un medidor a una cuenta. Falla si ya estaba vinculado. */
+/**
+ * Vincula un medidor a una cuenta. Falla si ya estaba vinculado.
+ *
+ * **Escribe todos los ajustes explícitamente**, tomándolos de
+ * `initialMeterSettings()`. Antes insertaba solo el identificador, el nombre y
+ * las fases, y el resto lo decidía el `default` de cada columna: así un
+ * medidor revinculado quedó con guardado cada 6 horas en vez de cada 5
+ * minutos y el histórico dejó de crecer sin que nada diera error. El detalle
+ * está en `src/domain/meter-defaults.ts`.
+ */
 export async function linkMeter(params: {
   deviceId: string;
   ownerId: string;
   name: string;
   phases: MeterPhases;
 }): Promise<Meter> {
+  const inicial = initialMeterSettings();
+
   const { data, error } = await supabase()
     .from('meters')
     .insert({
@@ -311,6 +323,14 @@ export async function linkMeter(params: {
       owner_id: params.ownerId,
       name: params.name,
       phases: params.phases,
+      collection_interval_minutes: inicial.collectionIntervalMinutes,
+      gap_minutes: inicial.gapMinutes,
+      overcurrent_a: inicial.overcurrentA,
+      low_voltage_v: inicial.lowVoltageV,
+      high_voltage_v: inicial.highVoltageV,
+      sensitivity: inicial.sensitivity,
+      alerts_enabled: inicial.alertsEnabled,
+      goal_kwh: inicial.goalKwh,
     })
     .select(COLUMNS)
     .single();
