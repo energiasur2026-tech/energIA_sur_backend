@@ -41,11 +41,36 @@ export const SENSITIVITY_LABEL: Record<Sensitivity, string> = {
   personalizada: 'Personalizada',
 };
 
+/**
+ * Lo que lee el usuario al elegir el grado.
+ *
+ * La redacción anterior —"desviaciones chicas", "desviaciones grandes",
+ * "para redes inestables"— no se entendió al probar el asistente con alguien
+ * que lo veía por primera vez: no decía desviaciones *de qué*, y "redes
+ * inestables" se leía como si hablara de internet.
+ *
+ * Tres reglas para cualquier redacción futura:
+ *
+ * 1. **Nombrar los 220 V.** Una desviación sin referencia no es nada.
+ * 2. **Misma estructura en las tres:** cuándo avisa, y para quién es.
+ * 3. **No sugerir peligro.** Son umbrales de aviso del producto, no límites
+ *    normativos: que la tensión salga del rango elegido significa que el
+ *    usuario pidió enterarse, no que haya una condición riesgosa.
+ *
+ * Dice "tensión" y no "voltaje" porque es la palabra que usan el Monitor y
+ * los correos de aviso: una sola palabra para una sola cosa.
+ *
+ * Las pantallas muestran además el rango concreto ("avisa fuera de X – Y"),
+ * así que acá no se repiten los números.
+ */
 export const SENSITIVITY_DESCRIPTION: Record<Sensitivity, string> = {
-  alta: 'Avisa ante desviaciones chicas. Para equipos delicados.',
-  media: 'Un punto intermedio. Sirve para la mayoría de los casos.',
-  baja: 'Avisa solo ante desviaciones grandes. Para redes inestables.',
-  personalizada: 'Los umbrales se ajustaron a mano.',
+  alta:
+    'Te avisa aunque la tensión se aleje poco de los 220 V. Para lugares con equipos delicados.',
+  media:
+    'Deja pasar las variaciones chicas de todos los días y te avisa cuando son más marcadas. Sirve para la mayoría de los casos.',
+  baja:
+    'Te avisa solo si la tensión se aleja mucho de los 220 V. Para zonas donde la luz fluctúa seguido y no querés un aviso por cada bajón.',
+  personalizada: 'Los umbrales se eligieron a mano.',
 };
 
 export function isSelectableSensitivity(value: unknown): value is Exclude<Sensitivity, 'personalizada'> {

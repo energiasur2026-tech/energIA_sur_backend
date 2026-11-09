@@ -12,6 +12,7 @@ import {
   SELECTABLE_SENSITIVITIES,
   SENSITIVITY_RANGES,
   parseThresholds,
+  SENSITIVITY_DESCRIPTION,
 } from '../src/domain/sensitivity.ts';
 import { estimateEnergyCost } from '../src/domain/tariffs.ts';
 import { includesFixedCharge } from '../src/domain/meter-role.ts';
@@ -234,4 +235,55 @@ test('ida y vuelta: elegir un grado y volver a los umbrales originales', () => {
   if (!vuelta.ok) return;
   assert.equal(vuelta.thresholds.lowVoltageV, 202.4);
   assert.equal(vuelta.thresholds.sensitivity, 'personalizada');
+});
+
+// ------------------------------- lo que el usuario lee al elegir el grado
+
+/**
+ * Estos tests existen porque la primera redacción no se entendió al probar el
+ * asistente con alguien que lo veía por primera vez. Decía "desviaciones
+ * chicas" sin aclarar de qué, y "para redes inestables" se leía como si
+ * hablara de internet. No se puede testear que un texto se entienda, pero sí
+ * que no vuelva lo que ya falló.
+ */
+
+test('cada grado elegible dice respecto de qué valor se mide', () => {
+  // Una desviación sin referencia no significa nada. Los 220 V son la
+  // referencia, y tienen que estar en el texto.
+  for (const grado of SELECTABLE_SENSITIVITIES) {
+    const texto = SENSITIVITY_DESCRIPTION[grado];
+    assert.ok(
+      texto.includes('220 V') || texto.includes('variaciones'),
+      `"${grado}" no dice respecto de qué se mide la desviación: ${texto}`
+    );
+  }
+});
+
+test('ninguna descripción usa la jerga que ya falló en la prueba', () => {
+  for (const grado of SELECTABLE_SENSITIVITIES) {
+    const texto = SENSITIVITY_DESCRIPTION[grado].toLowerCase();
+    for (const jerga of ['desviaciones', 'redes inestables', 'umbral']) {
+      assert.ok(
+        !texto.includes(jerga),
+        `"${grado}" volvió a usar "${jerga}", que es justo lo que no se entendió`
+      );
+    }
+  }
+});
+
+test('ninguna descripción sugiere peligro', () => {
+  // Son umbrales de aviso del producto, no límites normativos. Que la tensión
+  // salga del rango elegido significa que el usuario pidió enterarse.
+  for (const grado of SELECTABLE_SENSITIVITIES) {
+    const texto = SENSITIVITY_DESCRIPTION[grado].toLowerCase();
+    for (const alarma of ['peligro', 'riesgo', 'dañar', 'quemar', 'incendio']) {
+      assert.ok(!texto.includes(alarma), `"${grado}" sugiere peligro: ${texto}`);
+    }
+  }
+});
+
+test('las cuatro descripciones son distintas entre sí', () => {
+  const textos = Object.values(SENSITIVITY_DESCRIPTION);
+  assert.equal(new Set(textos).size, textos.length);
+  for (const t of textos) assert.ok(t.trim().length > 20, `descripción demasiado corta: ${t}`);
 });
