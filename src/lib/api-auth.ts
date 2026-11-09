@@ -42,3 +42,14 @@ export async function requireMeter(deviceId?: string | null): Promise<Authorized
 export function isErrorResponse(value: unknown): value is NextResponse {
   return value instanceof NextResponse;
 }
+
+/**
+ * De qué medidor habla este pedido.
+ *
+ * `null` cuando no lo dice: entonces `requireMeter` resuelve el primero
+ * accesible, que es el comportamiento de siempre. Una pantalla que todavía no
+ * elige medidor sigue funcionando igual.
+ */
+export function meterIdFrom(request: Request): string | null {
+  return new URL(request.url).searchParams.get('deviceId');
+}

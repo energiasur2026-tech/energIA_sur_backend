@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { isErrorResponse, requireMeter } from '@/lib/api-auth';
+import { isErrorResponse, meterIdFrom, requireMeter } from '@/lib/api-auth';
 import { apiError } from '@/lib/api-error';
 import { isValidInterval } from '@/domain/collection-intervals';
 import { PLACEMENT_ERROR_MESSAGE, parsePlacement } from '@/domain/meter-role';
@@ -12,9 +12,9 @@ import {
 } from '@/domain/sensitivity';
 import { supabaseRepositories as repos } from '@/infrastructure/supabase-repositories';
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const auth = await requireMeter();
+    const auth = await requireMeter(meterIdFrom(request));
     if (isErrorResponse(auth)) return auth;
 
     return NextResponse.json({
@@ -35,7 +35,7 @@ export async function GET() {
 
 export async function PUT(request: Request) {
   try {
-    const auth = await requireMeter();
+    const auth = await requireMeter(meterIdFrom(request));
     if (isErrorResponse(auth)) return auth;
 
     const body = (await request.json().catch(() => null)) as {

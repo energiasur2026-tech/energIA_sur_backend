@@ -112,3 +112,43 @@ test('un error que no es Error tampoco filtra nada', async () => {
   assert.equal(r.status, 500);
   assert.deepEqual(await r.json(), { error: 'Error interno del servidor.' });
 });
+
+// ------------------------- de qué medidor habla cada ruta
+
+/**
+ * Este test mira el CÓDIGO FUENTE, que es inusual y necesita justificación.
+ *
+ * La capacidad de elegir medidor vive en `requireMeter(deviceId)`, pero cada
+ * ruta tiene que acordarse de pasárselo. Yo agregué la capacidad y olvidé
+ * conectarla en las diez rutas, y los 252 tests siguieron en verde: con una
+ * sola cuenta y un solo medidor, el valor por defecto devolvía justo el que
+ * se pedía, así que nada fallaba hasta tener dos.
+ *
+ * Probarlo de verdad exigiría sustituir media docena de módulos por ruta.
+ * Verificar que el parámetro se pasa es una aproximación, pero atrapa
+ * exactamente la regresión que ocurrió.
+ */
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+
+const RAIZ = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+const RUTAS_DE_MEDIDOR = Object.keys(CONTRATO).filter(
+  (r) => r.startsWith('meter/') && r !== 'meter/collect'
+);
+
+for (const ruta of RUTAS_DE_MEDIDOR) {
+  test(`/api/${ruta} resuelve el medidor que le piden, no siempre el primero`, () => {
+    const fuente = readFileSync(path.join(RAIZ, 'src/app/api', ruta, 'route.ts'), 'utf8');
+
+    assert.ok(
+      !/requireMeter\(\s*\)/.test(fuente),
+      `/api/${ruta} llama a requireMeter() sin argumento: va a ignorar ?deviceId= y devolver siempre el primer medidor`
+    );
+    assert.ok(
+      fuente.includes('meterIdFrom(request)'),
+      `/api/${ruta} no lee el deviceId del pedido`
+    );
+  });
+}

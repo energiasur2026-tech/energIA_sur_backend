@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { isErrorResponse, requireMeter } from '@/lib/api-auth';
+import { isErrorResponse, meterIdFrom, requireMeter } from '@/lib/api-auth';
 import { apiError } from '@/lib/api-error';
 import { buildForecast } from '@/domain/forecast';
 import { includesFixedCharge } from '@/domain/meter-role';
@@ -26,9 +26,9 @@ function round(value: number, decimals: number) {
   return Math.round(value * factor) / factor;
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const auth = await requireMeter();
+    const auth = await requireMeter(meterIdFrom(request));
     if (isErrorResponse(auth)) return auth;
 
     const to = new Date();
