@@ -439,6 +439,19 @@ escriben juntos (`PUT /api/meter/settings` con `{"sensitivity": "alta"}`):
 dejarlos desacoplados permitiría que la pantalla diga "alta" y la detección
 use otro rango.
 
+Los umbrales también se pueden escribir a mano, y entonces el grado se deduce
+de ellos:
+
+```json
+{ "thresholds": { "lowVoltageV": 202.4, "highVoltageV": 237.6 } }
+```
+
+Si coinciden con un preset queda ese grado; si no, `personalizada`. Unos
+umbrales de 210–230 V **son** sensibilidad alta, los haya escrito el usuario o
+elegido de la lista. Entre un umbral y otro tienen que mediar al menos 6 V: la
+histéresis es de 2 V de cada lado, así que con una banda más angosta las zonas
+de recuperación se pisarían y una anomalía nunca podría cerrar.
+
 `personalizada` significa que los umbrales se ajustaron a mano y ningún preset
 debe pisarlos. Es el estado de los medidores anteriores a esta función, que
 conservan la tolerancia de ±8% sobre 220 V nominales que aplica ENRE a

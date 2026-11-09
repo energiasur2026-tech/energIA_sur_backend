@@ -4,7 +4,12 @@ import { supabase } from './supabase';
 import type { GoalInputMode } from '../domain/goal';
 import type { MeterPlacement, MeterRole } from '../domain/meter-role';
 import type { MeterPhases } from '../domain/installation-types';
-import { isSensitivity, rangeFor, type Sensitivity } from '../domain/sensitivity';
+import {
+  isSensitivity,
+  rangeFor,
+  type ParsedThresholds,
+  type Sensitivity,
+} from '../domain/sensitivity';
 import type { MeterThresholds } from '../domain/threshold-types';
 
 export type { MeterThresholds };
@@ -193,6 +198,30 @@ export async function setSensitivity(deviceId: string, sensitivity: Sensitivity)
     .eq('device_id', deviceId);
 
   if (error) throw new Error(`No se pudo cambiar la sensibilidad: ${error.message}`);
+}
+
+/**
+ * Fija los umbrales a mano.
+ *
+ * Escribe también la sensibilidad que esos umbrales representan: si coinciden
+ * con un preset queda ese grado, y si no, `personalizada`. Así el grado nunca
+ * contradice a los números, y `personalizada` deja de ser un estado del que
+ * no se puede salir ni al que se puede volver desde la aplicación.
+ *
+ * `overcurrentA` y `gapMinutes` solo se tocan si vienen: son independientes
+ * de la tensión y no tienen por qué reescribirse en cada ajuste.
+ */
+export async function setThresholds(deviceId: string, t: ParsedThresholds) {
+  const cambios: Record<string, unknown> = {
+    low_voltage_v: t.lowVoltageV,
+    high_voltage_v: t.highVoltageV,
+    sensitivity: t.sensitivity,
+  };
+  if (t.overcurrentA !== null) cambios.overcurrent_a = t.overcurrentA;
+  if (t.gapMinutes !== null) cambios.gap_minutes = t.gapMinutes;
+
+  const { error } = await supabase().from('meters').update(cambios).eq('device_id', deviceId);
+  if (error) throw new Error(`No se pudieron cambiar los umbrales: ${error.message}`);
 }
 
 /** Cambia si el equipo es monofásico o trifásico. */

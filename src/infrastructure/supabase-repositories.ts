@@ -18,6 +18,7 @@ import {
   setPhases,
   setPlacement,
   setSensitivity,
+  setThresholds,
 } from '../lib/meters';
 import { getProfile, saveProfile } from '../lib/profiles';
 import {
@@ -53,6 +54,9 @@ export const supabaseRepositories: Repositories = {
     },
     setSensitivity: async (deviceId, sensitivity) => {
       await setSensitivity(deviceId, sensitivity);
+    },
+    setThresholds: async (deviceId, thresholds) => {
+      await setThresholds(deviceId, thresholds);
     },
   },
 

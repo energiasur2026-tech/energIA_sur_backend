@@ -4,7 +4,12 @@ import { apiError } from '@/lib/api-error';
 import { isValidInterval } from '@/domain/collection-intervals';
 import { PLACEMENT_ERROR_MESSAGE, parsePlacement } from '@/domain/meter-role';
 import { isValidPhases } from '@/domain/installation-types';
-import { isSelectableSensitivity, rangeFor } from '@/domain/sensitivity';
+import {
+  isSelectableSensitivity,
+  parseThresholds,
+  rangeFor,
+  THRESHOLDS_ERROR_MESSAGE,
+} from '@/domain/sensitivity';
 import { supabaseRepositories as repos } from '@/infrastructure/supabase-repositories';
 
 export async function GET() {
@@ -40,6 +45,7 @@ export async function PUT(request: Request) {
       areaLabel?: unknown;
       phases?: unknown;
       sensitivity?: unknown;
+      thresholds?: unknown;
     } | null;
 
     // Dónde está instalado el medidor: el tablero central de la instalación o
@@ -60,9 +66,40 @@ export async function PUT(request: Request) {
         body.collectionIntervalMinutes === undefined &&
         body.alertsEnabled === undefined &&
         body.phases === undefined &&
-        body.sensitivity === undefined
+        body.sensitivity === undefined &&
+        body.thresholds === undefined
       ) {
         return NextResponse.json(resultado.placement);
+      }
+    }
+
+    // Umbrales escritos a mano. Es el camino de vuelta desde un grado
+    // preestablecido: sin esto, un medidor que elige "alta" no tiene forma de
+    // recuperar sus umbrales propios sin una consulta SQL.
+    if (body?.thresholds !== undefined) {
+      const resultado = parseThresholds(body.thresholds);
+      if (!resultado.ok) {
+        return NextResponse.json(
+          { error: THRESHOLDS_ERROR_MESSAGE[resultado.error] },
+          { status: 400 }
+        );
+      }
+
+      await repos.meters.setThresholds(auth.meter.deviceId, resultado.thresholds);
+
+      if (
+        body.collectionIntervalMinutes === undefined &&
+        body.alertsEnabled === undefined &&
+        body.phases === undefined &&
+        body.sensitivity === undefined
+      ) {
+        return NextResponse.json({
+          sensitivity: resultado.thresholds.sensitivity,
+          thresholds: {
+            lowVoltageV: resultado.thresholds.lowVoltageV,
+            highVoltageV: resultado.thresholds.highVoltageV,
+          },
+        });
       }
     }
 

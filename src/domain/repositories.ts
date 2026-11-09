@@ -26,7 +26,7 @@ import type { HomeContext } from './home-types';
 import type { GoalInputMode } from './goal';
 import type { MeterPlacement, MeterRole } from './meter-role';
 import type { MeterPhases } from './installation-types';
-import type { Sensitivity } from './sensitivity';
+import type { ParsedThresholds, Sensitivity } from './sensitivity';
 import type { Profile } from './profile-types';
 
 /** El medidor completo, tal como lo usan las rutas y los casos de uso. */
@@ -68,6 +68,8 @@ export interface MetersRepository {
   setPhases(deviceId: string, phases: MeterPhases): Promise<void>;
   /** Grado de sensibilidad. Reescribe también los umbrales de tensión. */
   setSensitivity(deviceId: string, sensitivity: Sensitivity): Promise<void>;
+  /** Umbrales escritos a mano. Fija también el grado que representan. */
+  setThresholds(deviceId: string, thresholds: ParsedThresholds): Promise<void>;
 }
 
 export interface ReadingsRepository {
