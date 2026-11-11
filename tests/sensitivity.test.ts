@@ -11,6 +11,8 @@ import {
   suggestedFor,
   SELECTABLE_SENSITIVITIES,
   SENSITIVITY_RANGES,
+  parseThresholds,
+  SENSITIVITY_DESCRIPTION,
 } from '../src/domain/sensitivity.ts';
 import { estimateEnergyCost } from '../src/domain/tariffs.ts';
 import { includesFixedCharge } from '../src/domain/meter-role.ts';
@@ -135,4 +137,153 @@ test('la lista de grados elegibles no incluye "personalizada"', () => {
     assert.notEqual(grado, 'personalizada');
     assert.ok(rangeFor(grado), `${grado} debería tener un rango`);
   }
+});
+
+// ------------------------------------------- umbrales escritos a mano
+
+test('unos umbrales válidos se aceptan', () => {
+  const r = parseThresholds({ lowVoltageV: 202.4, highVoltageV: 237.6 });
+  assert.equal(r.ok, true);
+  if (!r.ok) return;
+  assert.equal(r.thresholds.lowVoltageV, 202.4);
+  assert.equal(r.thresholds.highVoltageV, 237.6);
+});
+
+test('"personalizada" deja de ser una puerta de ida', () => {
+  // Era el problema: un medidor que elegía un grado no tenía forma de volver
+  // a sus umbrales propios sin una consulta SQL.
+  const r = parseThresholds({ lowVoltageV: 202.4, highVoltageV: 237.6 });
+  assert.equal(r.ok && r.thresholds.sensitivity, 'personalizada');
+});
+
+test('unos umbrales que coinciden con un preset SON ese grado', () => {
+  // 210-230 es sensibilidad alta, los haya escrito el usuario o elegido de
+  // la lista. Marcarlos "personalizada" sería mentirle a la pantalla.
+  const r = parseThresholds({ lowVoltageV: 210, highVoltageV: 230 });
+  assert.equal(r.ok && r.thresholds.sensitivity, 'alta');
+});
+
+test('faltando una de las dos tensiones se rechaza', () => {
+  assert.equal(parseThresholds({ lowVoltageV: 200 }).ok, false);
+  assert.equal(parseThresholds({}).ok, false);
+  assert.equal(parseThresholds(null).ok, false);
+});
+
+test('una tensión que no es número se rechaza', () => {
+  const r = parseThresholds({ lowVoltageV: 'doscientos', highVoltageV: 240 });
+  assert.equal(r.ok === false && r.error, 'tension_no_numerica');
+});
+
+test('una tensión disparatada se rechaza', () => {
+  assert.equal(
+    parseThresholds({ lowVoltageV: 2000, highVoltageV: 2400 }).ok === false,
+    true
+  );
+  assert.equal(
+    parseThresholds({ lowVoltageV: 10, highVoltageV: 240 }).ok === false,
+    true
+  );
+});
+
+test('el umbral bajo tiene que ser menor que el alto', () => {
+  const r = parseThresholds({ lowVoltageV: 240, highVoltageV: 200 });
+  assert.equal(r.ok === false && r.error, 'tension_invertida');
+});
+
+test('una banda más angosta que la histéresis se rechaza', () => {
+  // La histéresis es de 2 V de cada lado: con una banda de 3 V las zonas de
+  // recuperación se pisarían y una anomalía nunca podría cerrar.
+  const r = parseThresholds({ lowVoltageV: 219, highVoltageV: 222 });
+  assert.equal(r.ok === false && r.error, 'banda_demasiado_angosta');
+});
+
+test('la corriente y el intervalo son opcionales', () => {
+  const r = parseThresholds({ lowVoltageV: 200, highVoltageV: 240 });
+  assert.equal(r.ok && r.thresholds.overcurrentA, null);
+  assert.equal(r.ok && r.thresholds.gapMinutes, null);
+});
+
+test('si vienen, la corriente y el intervalo se validan', () => {
+  const ok = parseThresholds({ lowVoltageV: 200, highVoltageV: 240, overcurrentA: 20, gapMinutes: 30 });
+  assert.equal(ok.ok && ok.thresholds.overcurrentA, 20);
+  assert.equal(ok.ok && ok.thresholds.gapMinutes, 30);
+
+  assert.equal(
+    parseThresholds({ lowVoltageV: 200, highVoltageV: 240, overcurrentA: 9999 }).ok,
+    false
+  );
+  assert.equal(
+    parseThresholds({ lowVoltageV: 200, highVoltageV: 240, gapMinutes: 0 }).ok,
+    false
+  );
+  assert.equal(
+    parseThresholds({ lowVoltageV: 200, highVoltageV: 240, gapMinutes: 1.5 }).ok,
+    false
+  );
+});
+
+test('ida y vuelta: elegir un grado y volver a los umbrales originales', () => {
+  // El recorrido completo del problema reportado.
+  const originales = { lowVoltageV: 202.4, highVoltageV: 237.6 };
+  assert.equal(sensitivityOf(originales), 'personalizada');
+
+  const preset = rangeFor('alta')!;
+  assert.equal(sensitivityOf(preset), 'alta');
+
+  const vuelta = parseThresholds(originales);
+  assert.equal(vuelta.ok, true);
+  if (!vuelta.ok) return;
+  assert.equal(vuelta.thresholds.lowVoltageV, 202.4);
+  assert.equal(vuelta.thresholds.sensitivity, 'personalizada');
+});
+
+// ------------------------------- lo que el usuario lee al elegir el grado
+
+/**
+ * Estos tests existen porque la primera redacción no se entendió al probar el
+ * asistente con alguien que lo veía por primera vez. Decía "desviaciones
+ * chicas" sin aclarar de qué, y "para redes inestables" se leía como si
+ * hablara de internet. No se puede testear que un texto se entienda, pero sí
+ * que no vuelva lo que ya falló.
+ */
+
+test('cada grado elegible dice respecto de qué valor se mide', () => {
+  // Una desviación sin referencia no significa nada. Los 220 V son la
+  // referencia, y tienen que estar en el texto.
+  for (const grado of SELECTABLE_SENSITIVITIES) {
+    const texto = SENSITIVITY_DESCRIPTION[grado];
+    assert.ok(
+      texto.includes('220 V') || texto.includes('variaciones'),
+      `"${grado}" no dice respecto de qué se mide la desviación: ${texto}`
+    );
+  }
+});
+
+test('ninguna descripción usa la jerga que ya falló en la prueba', () => {
+  for (const grado of SELECTABLE_SENSITIVITIES) {
+    const texto = SENSITIVITY_DESCRIPTION[grado].toLowerCase();
+    for (const jerga of ['desviaciones', 'redes inestables', 'umbral']) {
+      assert.ok(
+        !texto.includes(jerga),
+        `"${grado}" volvió a usar "${jerga}", que es justo lo que no se entendió`
+      );
+    }
+  }
+});
+
+test('ninguna descripción sugiere peligro', () => {
+  // Son umbrales de aviso del producto, no límites normativos. Que la tensión
+  // salga del rango elegido significa que el usuario pidió enterarse.
+  for (const grado of SELECTABLE_SENSITIVITIES) {
+    const texto = SENSITIVITY_DESCRIPTION[grado].toLowerCase();
+    for (const alarma of ['peligro', 'riesgo', 'dañar', 'quemar', 'incendio']) {
+      assert.ok(!texto.includes(alarma), `"${grado}" sugiere peligro: ${texto}`);
+    }
+  }
+});
+
+test('las cuatro descripciones son distintas entre sí', () => {
+  const textos = Object.values(SENSITIVITY_DESCRIPTION);
+  assert.equal(new Set(textos).size, textos.length);
+  for (const t of textos) assert.ok(t.trim().length > 20, `descripción demasiado corta: ${t}`);
 });

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { isErrorResponse, requireMeter } from '@/lib/api-auth';
+import { isErrorResponse, meterIdFrom, requireMeter } from '@/lib/api-auth';
 import { apiError } from '@/lib/api-error';
 import { BASE_CRON_MINUTES } from '@/domain/collection-intervals';
 import { supabaseRepositories as repos } from '@/infrastructure/supabase-repositories';
@@ -13,7 +13,7 @@ import { supabaseRepositories as repos } from '@/infrastructure/supabase-reposit
  */
 export async function GET(request: Request) {
   try {
-    const auth = await requireMeter(request);
+    const auth = await requireMeter(meterIdFrom(request));
     if (isErrorResponse(auth)) return auth;
 
     const intervalMinutes = auth.meter.collectionIntervalMinutes;

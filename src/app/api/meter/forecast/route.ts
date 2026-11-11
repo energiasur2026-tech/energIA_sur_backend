@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { requireMeter,isErrorResponse } from '@/lib/api-auth';
+import { requireMeter,isErrorResponse,meterIdFrom } from '@/lib/api-auth';
 import { apiError } from '@/lib/api-error';
 import { buildMonthlyProjection, argentinaMonth, calendarMonth } from '@/domain/monthly-projection';
 import { buildRecommendations } from '@/domain/recommendations';
@@ -7,7 +7,7 @@ import { getLumiReadings } from '@/lib/readings';
 import { personalGoal } from '@/lib/personal-goals';
 import { supabaseRepositories as repos } from '@/infrastructure/supabase-repositories';
 export async function GET(request:Request){
- try{const auth=await requireMeter(request);if(isErrorResponse(auth))return auth;
+ try{const auth=await requireMeter(meterIdFrom(request));if(isErrorResponse(auth))return auth;
  const now=new Date(),month=new URL(request.url).searchParams.get('month')??argentinaMonth(now);
  let bounds;try{bounds=calendarMonth(month,now);}catch{return NextResponse.json({error:'Mes inválido.'},{status:400});}
  if(+bounds.start>+now)return NextResponse.json({error:'Seleccioná el mes actual o uno anterior.'},{status:400});

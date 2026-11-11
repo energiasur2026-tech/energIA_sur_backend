@@ -26,7 +26,8 @@ import type { HomeContext } from './home-types';
 import type { GoalInputMode } from './goal';
 import type { MeterPlacement, MeterRole } from './meter-role';
 import type { MeterPhases } from './installation-types';
-import type { Sensitivity } from './sensitivity';
+import type { AccessLevel } from './device-linking';
+import type { ParsedThresholds, Sensitivity } from './sensitivity';
 import type { Profile } from './profile-types';
 
 /** El medidor completo, tal como lo usan las rutas y los casos de uso. */
@@ -52,9 +53,25 @@ export type MeterRecord = {
   phases: MeterPhases;
   /** Grado de sensibilidad de las alertas de tensión. */
   sensitivity: Sensitivity;
+  /** Quién lo vinculó. No se expone en la API: deriva permisos, nada más. */
+  ownerId: string;
 };
 
 export interface MetersRepository {
+  /** Qué acceso tiene una cuenta sobre un medidor: dueña, invitada o ninguno. */
+  accessLevel(userId: string, deviceId: string): Promise<AccessLevel>;
+  /** Si el medidor ya pertenece a alguna cuenta. No dice a cuál, a propósito. */
+  isLinked(deviceId: string): Promise<boolean>;
+  link(params: {
+    deviceId: string;
+    ownerId: string;
+    name: string;
+    phases: MeterPhases;
+  }): Promise<MeterRecord>;
+  /** Borra el medidor y, en cascada, su contexto e invitados. Las lecturas quedan. */
+  unlink(deviceId: string): Promise<void>;
+  /** Lecturas guardadas de un medidor, esté vinculado o no. */
+  countReadings(deviceId: string): Promise<number>;
   /** Todos los medidores del sistema. Lo usa el recolector programado. */
   all(): Promise<MeterRecord[]>;
   /** Los medidores a los que accede una cuenta: propios y compartidos. */
@@ -68,6 +85,8 @@ export interface MetersRepository {
   setPhases(deviceId: string, phases: MeterPhases): Promise<void>;
   /** Grado de sensibilidad. Reescribe también los umbrales de tensión. */
   setSensitivity(deviceId: string, sensitivity: Sensitivity): Promise<void>;
+  /** Umbrales escritos a mano. Fija también el grado que representan. */
+  setThresholds(deviceId: string, thresholds: ParsedThresholds): Promise<void>;
 }
 
 export interface ReadingsRepository {

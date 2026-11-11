@@ -10,7 +10,11 @@ import { getCurrentUser } from '../lib/auth';
 import { countActiveEvents, listEvents } from '../lib/events';
 import { clearHomeContext, getHomeContext, saveHomeContext } from '../lib/home';
 import {
+  accessLevelFor,
+  countReadingsOf,
   getAllMeters,
+  isLinked,
+  linkMeter,
   getMetersForOwner,
   setAlertsEnabled,
   setCollectionInterval,
@@ -18,6 +22,8 @@ import {
   setPhases,
   setPlacement,
   setSensitivity,
+  setThresholds,
+  unlinkMeter,
 } from '../lib/meters';
 import { getProfile, saveProfile } from '../lib/profiles';
 import {
@@ -34,6 +40,11 @@ import type { Repositories } from '../domain/repositories';
 
 export const supabaseRepositories: Repositories = {
   meters: {
+    accessLevel: (userId, deviceId) => accessLevelFor(userId, deviceId),
+    isLinked: (deviceId) => isLinked(deviceId),
+    link: (params) => linkMeter(params),
+    unlink: (deviceId) => unlinkMeter(deviceId),
+    countReadings: (deviceId) => countReadingsOf(deviceId),
     all: () => getAllMeters(),
     forOwner: (userId) => getMetersForOwner(userId),
     setCollectionInterval: async (deviceId, minutes) => {
@@ -53,6 +64,9 @@ export const supabaseRepositories: Repositories = {
     },
     setSensitivity: async (deviceId, sensitivity) => {
       await setSensitivity(deviceId, sensitivity);
+    },
+    setThresholds: async (deviceId, thresholds) => {
+      await setThresholds(deviceId, thresholds);
     },
   },
 

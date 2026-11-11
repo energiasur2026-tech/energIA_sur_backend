@@ -14,7 +14,7 @@ const meter = (id: string) => ({ deviceId:id, name:id, ownerId:id==='meter-share
 mock.module('../src/lib/auth.ts', { namedExports: { getCurrentUser: async () => identity ? {id:identity} : null } });
 mock.module('../src/lib/meters.ts', { namedExports: {
   getMeterForOwner: async (user: keyof typeof meters) => meter(meters[user][0]),
-  getMetersForOwner: async (user: keyof typeof meters) => meters[user].map(meter),
+  getAccessibleMeter: async (user: keyof typeof meters, id: string) => meters[user].includes(id) ? meter(id) : null,
 } });
 const end = new Date(); const start = new Date(+end-3600000);
 const rows = (id:string) => [
@@ -27,6 +27,26 @@ mock.module('../src/lib/readings.ts', { namedExports: {
   getLatestReading:async(id:string)=>({recordedAt:rows(id)[1].recorded_at,powerW:rows(id)[1].power_w,voltage:221}),
 } });
 const { GET, POST } = await import('../src/app/api/lumi/v1/route.ts');
+const { requireMeter, isErrorResponse, meterIdFrom } = await import('../src/lib/api-auth.ts');
+
+test('meter selection accepts both query names and checks access before data lookup', async () => {
+  identity = 'A';
+  for (const query of ['deviceId=meter-a2', 'meterId=meter-a2', 'deviceId=meter-a2&meterId=meter-a']) {
+    const request = new Request('http://localhost/api/lumi/v1?' + query);
+    const selected = await requireMeter(meterIdFrom(request));
+    assert.ok(!isErrorResponse(selected));
+    if (!isErrorResponse(selected)) assert.equal(selected.meter.deviceId, 'meter-a2');
+  }
+  queried = [];
+  const response = await GET(new Request('http://localhost/api/lumi/v1?deviceId=meter-b'));
+  assert.equal(response.status, 403);
+  assert.equal(queried.length, 0);
+  identity = null;
+  const expired = await requireMeter('meter-a');
+  assert.ok(isErrorResponse(expired));
+  if (isErrorResponse(expired)) assert.equal(expired.status, 401);
+  identity = 'A';
+});
 const request = (id:string, action?:object, extra='') => new Request('http://localhost:3001/api/lumi/v1?meterId='+id+extra, {
   method:action?'POST':'GET', headers:{origin:'http://localhost:3000','content-type':'application/json'}, body:action?JSON.stringify(action):undefined,
 });

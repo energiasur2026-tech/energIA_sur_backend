@@ -3,24 +3,35 @@ import 'server-only';
 import { withPersonalGoal } from './personal-goals';
 import { NextResponse } from 'next/server';
 import { getCurrentUser } from './auth';
-import { getMeterForOwner, getMetersForOwner, type Meter } from './meters';
+import { getAccessibleMeter, getMeterForOwner, type Meter } from './meters';
 
 export type AuthorizedMeter = { userId: string; meter: Meter };
 
 /**
  * Resuelve el medidor del usuario logueado para una ruta de API.
+ *
+ * Con `deviceId`, resuelve ese medidor y verifica que la cuenta tenga acceso
+ * —propio o compartido—. Sin él, devuelve el primero accesible, que es el
+ * comportamiento de siempre: así una pantalla que todavía no elige medidor
+ * sigue funcionando igual.
+ *
+ * Un medidor ajeno y uno inexistente devuelven lo mismo. Si difirieran,
+ * probar identificadores diría cuáles están tomados.
+ *
  * Devuelve una `NextResponse` de error lista para retornar cuando no
- * corresponde seguir (sin sesión, o cuenta sin medidor vinculado todavía).
+ * corresponde seguir.
  */
-export async function requireMeter(request?: Request): Promise<AuthorizedMeter | NextResponse> {
+export async function requireMeter(selection?: string | Request | null): Promise<AuthorizedMeter | NextResponse> {
+  const deviceId = typeof selection === 'string' ? selection : selection ? meterIdFrom(selection) : null;
   const user = await getCurrentUser();
   if (!user) {
     return NextResponse.json({ error: 'No autenticado.' }, { status: 401 });
   }
 
-  const selected = request ? new URL(request.url).searchParams.get('meterId') : null;
-  const meter = selected ? (await getMetersForOwner(user.id)).find(m => m.deviceId === selected) : await getMeterForOwner(user.id);
-  if (selected && !meter) return NextResponse.json({ code: 'METER_FORBIDDEN', error: 'No tenés autorización para este medidor.' }, { status: 403, headers: { 'Cache-Control': 'no-store' } });
+  const meter = deviceId
+    ? await getAccessibleMeter(user.id, deviceId)
+    : await getMeterForOwner(user.id);
+  if (deviceId && !meter) return NextResponse.json({ code: 'METER_FORBIDDEN', error: 'No tenés autorización para este medidor.' }, { status: 403, headers: { 'Cache-Control': 'no-store' } });
   if (!meter) {
     return NextResponse.json(
       { code: 'NO_METER', error: 'Tu cuenta todavía no tiene un medidor vinculado.' },
@@ -33,4 +44,16 @@ export async function requireMeter(request?: Request): Promise<AuthorizedMeter |
 
 export function isErrorResponse(value: unknown): value is NextResponse {
   return value instanceof NextResponse;
+}
+
+/**
+ * De qué medidor habla este pedido.
+ *
+ * `null` cuando no lo dice: entonces `requireMeter` resuelve el primero
+ * accesible, que es el comportamiento de siempre. Una pantalla que todavía no
+ * elige medidor sigue funcionando igual.
+ */
+export function meterIdFrom(request: Request): string | null {
+  const query = new URL(request.url).searchParams;
+  return query.get('deviceId') || query.get('meterId');
 }

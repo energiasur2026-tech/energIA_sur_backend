@@ -4,13 +4,19 @@ import { supabase } from './supabase';
 import type { GoalInputMode } from '../domain/goal';
 import type { MeterPlacement, MeterRole } from '../domain/meter-role';
 import type { MeterPhases } from '../domain/installation-types';
-import { isSensitivity, rangeFor, type Sensitivity } from '../domain/sensitivity';
+import { canView, type AccessLevel } from '../domain/device-linking';
+import { initialMeterSettings } from '../domain/meter-defaults';
+import {
+  isSensitivity,
+  rangeFor,
+  type ParsedThresholds,
+  type Sensitivity,
+} from '../domain/sensitivity';
 import type { MeterThresholds } from '../domain/threshold-types';
 
 export type { MeterThresholds };
 
 export type Meter = {
-  ownerId?: string;
   deviceId: string;
   name: string;
   thresholds: MeterThresholds;
@@ -30,12 +36,14 @@ export type Meter = {
   phases: MeterPhases;
   /** Grado de sensibilidad de las alertas de tensión. */
   sensitivity: Sensitivity;
+  /** Quién lo vinculó. No se expone en la API: solo se usa para derivar permisos. */
+  ownerId: string;
   /** Hasta qué instante ya se evaluaron anomalías. `null` = nunca. */
   anomaliesEvaluatedAt: string | null;
 };
 
 const COLUMNS =
-  'owner_id, device_id, name, low_voltage_v, high_voltage_v, overcurrent_a, gap_minutes, collection_interval_minutes, goal_kwh, goal_input_mode, alerts_enabled, anomalies_evaluated_at, role, area_label, phases, sensitivity';
+  'device_id, owner_id, name, low_voltage_v, high_voltage_v, overcurrent_a, gap_minutes, collection_interval_minutes, goal_kwh, goal_input_mode, alerts_enabled, anomalies_evaluated_at, role, area_label, phases, sensitivity';
 
 /**
  * Ids de los medidores a los que `userId` accede: los que le pertenecen y los
@@ -158,7 +166,6 @@ export async function setAlertsEnabled(deviceId: string, enabled: boolean) {
 
 function mapMeter(row: Record<string, unknown>): Meter {
   return {
-    ownerId: row.owner_id ? String(row.owner_id) : undefined,
     deviceId: String(row.device_id),
     name: String(row.name),
     collectionIntervalMinutes: Number(row.collection_interval_minutes),
@@ -176,6 +183,7 @@ function mapMeter(row: Record<string, unknown>): Meter {
     areaLabel: row.area_label ? String(row.area_label) : null,
     phases: Number(row.phases) === 3 ? 3 : 1,
     sensitivity: isSensitivity(row.sensitivity) ? row.sensitivity : 'personalizada',
+    ownerId: String(row.owner_id),
   };
 }
 
@@ -195,6 +203,30 @@ export async function setSensitivity(deviceId: string, sensitivity: Sensitivity)
     .eq('device_id', deviceId);
 
   if (error) throw new Error(`No se pudo cambiar la sensibilidad: ${error.message}`);
+}
+
+/**
+ * Fija los umbrales a mano.
+ *
+ * Escribe también la sensibilidad que esos umbrales representan: si coinciden
+ * con un preset queda ese grado, y si no, `personalizada`. Así el grado nunca
+ * contradice a los números, y `personalizada` deja de ser un estado del que
+ * no se puede salir ni al que se puede volver desde la aplicación.
+ *
+ * `overcurrentA` y `gapMinutes` solo se tocan si vienen: son independientes
+ * de la tensión y no tienen por qué reescribirse en cada ajuste.
+ */
+export async function setThresholds(deviceId: string, t: ParsedThresholds) {
+  const cambios: Record<string, unknown> = {
+    low_voltage_v: t.lowVoltageV,
+    high_voltage_v: t.highVoltageV,
+    sensitivity: t.sensitivity,
+  };
+  if (t.overcurrentA !== null) cambios.overcurrent_a = t.overcurrentA;
+  if (t.gapMinutes !== null) cambios.gap_minutes = t.gapMinutes;
+
+  const { error } = await supabase().from('meters').update(cambios).eq('device_id', deviceId);
+  if (error) throw new Error(`No se pudieron cambiar los umbrales: ${error.message}`);
 }
 
 /** Cambia si el equipo es monofásico o trifásico. */
@@ -218,4 +250,135 @@ export async function setPlacement(deviceId: string, placement: MeterPlacement) 
     .eq('device_id', deviceId);
 
   if (error) throw new Error(`No se pudo cambiar la ubicación del medidor: ${error.message}`);
+}
+
+/**
+ * Qué acceso tiene una cuenta sobre un medidor.
+ *
+ * Es la base del aislamiento entre clientes: toda ruta que reciba un
+ * `deviceId` del exterior tiene que pasar por acá antes de leer o escribir
+ * nada. Sin esto, conocer un identificador alcanzaría para ver datos ajenos.
+ */
+export async function accessLevelFor(userId: string, deviceId: string): Promise<AccessLevel> {
+  const owned = await supabase()
+    .from('meters')
+    .select('device_id')
+    .eq('device_id', deviceId)
+    .eq('owner_id', userId)
+    .maybeSingle();
+
+  if (owned.error) throw new Error(`No se pudo resolver el acceso: ${owned.error.message}`);
+  if (owned.data) return 'owner';
+
+  const shared = await supabase()
+    .from('meter_members')
+    .select('device_id')
+    .eq('device_id', deviceId)
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (shared.error) throw new Error(`No se pudo resolver el acceso: ${shared.error.message}`);
+  return shared.data ? 'member' : 'none';
+}
+
+/**
+ * Si un medidor ya está vinculado a alguna cuenta.
+ *
+ * Deliberadamente **no** devuelve a quién: confirmarle a un desconocido que
+ * cierto identificador existe y está tomado ya es información de más.
+ */
+export async function isLinked(deviceId: string): Promise<boolean> {
+  const { data, error } = await supabase()
+    .from('meters')
+    .select('device_id')
+    .eq('device_id', deviceId)
+    .maybeSingle();
+
+  if (error) throw new Error(`No se pudo verificar el medidor: ${error.message}`);
+  return data !== null;
+}
+
+/**
+ * Vincula un medidor a una cuenta. Falla si ya estaba vinculado.
+ *
+ * **Escribe todos los ajustes explícitamente**, tomándolos de
+ * `initialMeterSettings()`. Antes insertaba solo el identificador, el nombre y
+ * las fases, y el resto lo decidía el `default` de cada columna: así un
+ * medidor revinculado quedó con guardado cada 6 horas en vez de cada 5
+ * minutos y el histórico dejó de crecer sin que nada diera error. El detalle
+ * está en `src/domain/meter-defaults.ts`.
+ */
+export async function linkMeter(params: {
+  deviceId: string;
+  ownerId: string;
+  name: string;
+  phases: MeterPhases;
+}): Promise<Meter> {
+  const inicial = initialMeterSettings();
+
+  const { data, error } = await supabase()
+    .from('meters')
+    .insert({
+      device_id: params.deviceId,
+      owner_id: params.ownerId,
+      name: params.name,
+      phases: params.phases,
+      collection_interval_minutes: inicial.collectionIntervalMinutes,
+      gap_minutes: inicial.gapMinutes,
+      overcurrent_a: inicial.overcurrentA,
+      low_voltage_v: inicial.lowVoltageV,
+      high_voltage_v: inicial.highVoltageV,
+      sensitivity: inicial.sensitivity,
+      alerts_enabled: inicial.alertsEnabled,
+      goal_kwh: inicial.goalKwh,
+    })
+    .select(COLUMNS)
+    .single();
+
+  if (error) throw new Error(`No se pudo vincular el medidor: ${error.message}`);
+  return mapMeter(data as Record<string, unknown>);
+}
+
+/**
+ * Desvincula un medidor.
+ *
+ * El borrado en cascada se lleva el contexto del lugar y las cuentas
+ * invitadas. **Las lecturas y los eventos quedan**, porque `readings` no
+ * depende de `meters`: volver a vincular el mismo medidor recupera su
+ * historia entera.
+ */
+export async function unlinkMeter(deviceId: string): Promise<void> {
+  const { error } = await supabase().from('meters').delete().eq('device_id', deviceId);
+  if (error) throw new Error(`No se pudo desvincular el medidor: ${error.message}`);
+}
+
+/** Cuántas lecturas hay guardadas de un medidor, esté vinculado o no. */
+export async function countReadingsOf(deviceId: string): Promise<number> {
+  const { count, error } = await supabase()
+    .from('readings')
+    .select('id', { count: 'exact', head: true })
+    .eq('device_id', deviceId);
+
+  if (error) throw new Error(`No se pudieron contar las lecturas: ${error.message}`);
+  return count ?? 0;
+}
+
+/**
+ * Un medidor puntual, si la cuenta tiene acceso.
+ *
+ * `null` cuando no existe o no es suyo: los dos casos se responden igual
+ * afuera, porque si difirieran, probar identificadores diría cuáles están
+ * tomados.
+ */
+export async function getAccessibleMeter(userId: string, deviceId: string): Promise<Meter | null> {
+  if (!canView(await accessLevelFor(userId, deviceId))) return null;
+
+  const { data, error } = await supabase()
+    .from('meters')
+    .select(COLUMNS)
+    .eq('device_id', deviceId)
+    .maybeSingle();
+
+  if (error) throw new Error(`No se pudo leer el medidor: ${error.message}`);
+  return data ? mapMeter(data as Record<string, unknown>) : null;
 }

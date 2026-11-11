@@ -129,3 +129,25 @@ export function getDeviceDetails(deviceId: string) {
 export function getDeviceStatus(deviceId: string) {
   return request<TuyaStatusItem[]>('GET', `/v1.0/devices/${deviceId}/status`);
 }
+
+/**
+ * Si Tuya conoce este dispositivo.
+ *
+ * Se usa al vincular: un identificador que Tuya no reconoce no es un medidor
+ * de este sistema. Distingue "no existe" de "Tuya no responde": lo primero
+ * devuelve `false` y es una respuesta; lo segundo propaga el error, porque un
+ * problema de comunicación no debe parecerse a un medidor inexistente.
+ */
+export async function deviceExists(deviceId: string): Promise<boolean> {
+  try {
+    await getDeviceDetails(deviceId);
+    return true;
+  } catch (error) {
+    // Tuya responde con un código propio cuando el dispositivo no existe. El
+    // resto de los fallos —credenciales, red, suscripción vencida— se
+    // propagan para que la ruta los informe como 502 y no como "no existe".
+    const detalle = error instanceof Error ? error.message : String(error);
+    if (/not exist|not found|1106|1004/i.test(detalle)) return false;
+    throw error;
+  }
+}

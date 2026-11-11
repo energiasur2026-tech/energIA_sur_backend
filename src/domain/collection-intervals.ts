@@ -13,6 +13,12 @@ export const COLLECTION_INTERVALS = [
   { minutes: 1440, label: 'Una vez por día' },
 ] as const;
 
+/**
+ * @deprecated Era código muerto: lo exportaba este archivo, nadie lo usaba, y
+ * el default real vivía solo en el `default` de la columna. Las dos cifras se
+ * alejaron sin que nada avisara. El valor con el que arranca un medidor está
+ * en `meter-defaults.ts` y el alta lo escribe explícitamente.
+ */
 export const DEFAULT_INTERVAL_MINUTES = 360;
 
 /**

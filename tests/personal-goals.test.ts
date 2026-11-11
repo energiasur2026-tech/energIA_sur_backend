@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 let user='A';let reads=0;const data=new Map<string,Record<string,unknown>>();
 const meters=[{deviceId:'a',ownerId:'A',goalKwh:266,goalInputMode:'kwh',role:'central'},{deviceId:'b',ownerId:'B',goalKwh:999,goalInputMode:'kwh',role:'central'}];
 mock.module('../src/lib/auth.ts',{namedExports:{getCurrentUser:async()=>({id:user})}});
-mock.module('../src/lib/meters.ts',{namedExports:{getMeterForOwner:async()=>user==='C'?meters[0]:meters.find(m=>m.ownerId===user),getMetersForOwner:async(id:string)=>id==='C'?[meters[0]]:meters.filter(m=>m.ownerId===id)}});
+mock.module('../src/lib/meters.ts',{namedExports:{getMeterForOwner:async()=>user==='C'?meters[0]:meters.find(m=>m.ownerId===user),getAccessibleMeter:async(id:string,deviceId:string)=>(id==='C'?[meters[0]]:meters.filter(m=>m.ownerId===id)).find(m=>m.deviceId===deviceId)}});
 mock.module('../src/lib/supabase.ts',{namedExports:{supabase:()=>({from:()=>{const filter:Record<string,string>={};return {select(){return this;},eq(k:string,v:string){filter[k]=v;return this;},async maybeSingle(){reads++;return {data:data.get(filter.user_id+':'+filter.device_id)??null,error:null};},async upsert(value:Record<string,unknown>){data.set(value.user_id+':'+value.device_id,value);return {error:null};}};}})}});
 const {GET,PUT}=await import('../src/app/api/meter/goal/route.ts');
 const {requireMeter,isErrorResponse}=await import('../src/lib/api-auth.ts');
