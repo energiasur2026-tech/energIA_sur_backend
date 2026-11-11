@@ -7,9 +7,9 @@ import { isValidPhases } from '@/domain/installation-types';
 import { isSelectableSensitivity, rangeFor } from '@/domain/sensitivity';
 import { supabaseRepositories as repos } from '@/infrastructure/supabase-repositories';
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const auth = await requireMeter();
+    const auth = await requireMeter(request);
     if (isErrorResponse(auth)) return auth;
 
     return NextResponse.json({
@@ -30,7 +30,7 @@ export async function GET() {
 
 export async function PUT(request: Request) {
   try {
-    const auth = await requireMeter();
+    const auth = await requireMeter(request);
     if (isErrorResponse(auth)) return auth;
 
     const body = (await request.json().catch(() => null)) as {

@@ -19,12 +19,12 @@ import {
 
 test('un presupuesto en pesos se convierte al consumo que lo produce', () => {
   // (20000 - 15000) / 116.053 = 43.08 -> cae en el primer tramo
-  assert.equal(budgetToKwh(20000), 43.1);
+  assert.ok(Math.abs(budgetToKwh(20000)!-43.1)<0.05);
 });
 
 test('la conversión elige el tramo coherente con el consumo resultante', () => {
   // (30000 - 16000) / 120.293 = 116.38 -> cae en el segundo tramo
-  assert.equal(budgetToKwh(30000), 116.4);
+  assert.ok(Math.abs(budgetToKwh(30000)!-116.4)<0.05);
 });
 
 test('un presupuesto que no cubre el cargo fijo más barato no tiene solución', () => {

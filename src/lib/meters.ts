@@ -10,6 +10,7 @@ import type { MeterThresholds } from '../domain/threshold-types';
 export type { MeterThresholds };
 
 export type Meter = {
+  ownerId?: string;
   deviceId: string;
   name: string;
   thresholds: MeterThresholds;
@@ -34,7 +35,7 @@ export type Meter = {
 };
 
 const COLUMNS =
-  'device_id, name, low_voltage_v, high_voltage_v, overcurrent_a, gap_minutes, collection_interval_minutes, goal_kwh, goal_input_mode, alerts_enabled, anomalies_evaluated_at, role, area_label, phases, sensitivity';
+  'owner_id, device_id, name, low_voltage_v, high_voltage_v, overcurrent_a, gap_minutes, collection_interval_minutes, goal_kwh, goal_input_mode, alerts_enabled, anomalies_evaluated_at, role, area_label, phases, sensitivity';
 
 /**
  * Ids de los medidores a los que `userId` accede: los que le pertenecen y los
@@ -157,6 +158,7 @@ export async function setAlertsEnabled(deviceId: string, enabled: boolean) {
 
 function mapMeter(row: Record<string, unknown>): Meter {
   return {
+    ownerId: row.owner_id ? String(row.owner_id) : undefined,
     deviceId: String(row.device_id),
     name: String(row.name),
     collectionIntervalMinutes: Number(row.collection_interval_minutes),

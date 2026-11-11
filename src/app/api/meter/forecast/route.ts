@@ -1,92 +1,22 @@
 import { NextResponse } from 'next/server';
-import { isErrorResponse, requireMeter } from '@/lib/api-auth';
+import { requireMeter,isErrorResponse } from '@/lib/api-auth';
 import { apiError } from '@/lib/api-error';
-import { buildForecast } from '@/domain/forecast';
-import { includesFixedCharge } from '@/domain/meter-role';
-import { buildGoalProgress, monthBoundsArgentina } from '@/domain/goal';
-
+import { buildMonthlyProjection, argentinaMonth, calendarMonth } from '@/domain/monthly-projection';
 import { buildRecommendations } from '@/domain/recommendations';
+import { getLumiReadings } from '@/lib/readings';
+import { personalGoal } from '@/lib/personal-goals';
 import { supabaseRepositories as repos } from '@/infrastructure/supabase-repositories';
-
-/**
- * Ventana de historia que alimenta la proyección. Más allá de tres meses, un
- * cambio de hábitos o de estación pesa más que el volumen de datos.
- */
-const LOOKBACK_DAYS = 90;
-
-/**
- * El perfil horario necesita varios días para no ser el retrato de una sola
- * jornada. Por debajo de esto no se devuelve: es preferible no mostrarlo a
- * mostrar una "curva típica" construida con unas pocas horas.
- */
-const PROFILE_MIN_DAYS = 3;
-
-function round(value: number, decimals: number) {
-  const factor = 10 ** decimals;
-  return Math.round(value * factor) / factor;
-}
-
-export async function GET() {
-  try {
-    const auth = await requireMeter();
-    if (isErrorResponse(auth)) return auth;
-
-    const to = new Date();
-    const from = new Date(to.getTime() - LOOKBACK_DAYS * 86_400_000);
-    const { start: monthStart } = monthBoundsArgentina(to);
-
-    const [basis, monthConsumption, dailyEnergy] = await Promise.all([
-      repos.readings.forecastBasis(auth.meter.deviceId, from, to),
-      repos.readings.periodConsumption(auth.meter.deviceId, monthStart, to),
-      repos.readings.dailyEnergy(auth.meter.deviceId, monthStart, to),
-    ]);
-
-    const profile =
-      basis.daysWithData >= PROFILE_MIN_DAYS
-        ? await repos.readings.hourlyProfile(auth.meter.deviceId, from, to)
-        : null;
-
-    // El consumo del mes sale de la diferencia del contador acumulado, igual
-    // que en la vista de Consumo: hacen falta dos lecturas y que no haya
-    // retrocedido.
-    const consumedThisMonth =
-      monthConsumption.samples >= 2 &&
-      monthConsumption.firstEnergy !== null &&
-      monthConsumption.lastEnergy !== null &&
-      monthConsumption.lastEnergy >= monthConsumption.firstEnergy
-        ? monthConsumption.lastEnergy - monthConsumption.firstEnergy
-        : null;
-
-    const goal = buildGoalProgress({
-      goalKwh: auth.meter.goalKwh,
-      inputMode: auth.meter.goalInputMode,
-      consumedKwh: consumedThisMonth,
-      measuredFrom: monthConsumption.firstAt,
-      measuredTo: monthConsumption.lastAt,
-      now: to,
-    });
-
-    return NextResponse.json({
-      // El rol viaja en la respuesta para que la pantalla sepa cómo
-      // presentarla sin tener que pedir los ajustes por separado.
-      role: auth.meter.role,
-      billable: includesFixedCharge(auth.meter.role),
-      forecast: buildForecast(basis, includesFixedCharge(auth.meter.role)),
-      profile,
-      profileMinDays: PROFILE_MIN_DAYS,
-      lookbackDays: LOOKBACK_DAYS,
-      goal,
-      // Curva real del mes: la vista la compara contra el ritmo ideal.
-      monthDaily: dailyEnergy.map((point) => ({
-        day: point.day,
-        consumedKwh:
-          point.lastEnergy !== null && monthConsumption.firstEnergy !== null
-            ? Math.max(round(point.lastEnergy - monthConsumption.firstEnergy, 3), 0)
-            : null,
-      })),
-      recommendations: buildRecommendations(goal, profile),
-    });
-  } catch (error) {
-    return apiError('api/meter/forecast', error);
-  }
+export async function GET(request:Request){
+ try{const auth=await requireMeter(request);if(isErrorResponse(auth))return auth;
+ const now=new Date(),month=new URL(request.url).searchParams.get('month')??argentinaMonth(now);
+ let bounds;try{bounds=calendarMonth(month,now);}catch{return NextResponse.json({error:'Mes inválido.'},{status:400});}
+ if(+bounds.start>+now)return NextResponse.json({error:'Seleccioná el mes actual o uno anterior.'},{status:400});
+ const end=new Date(Math.min(+bounds.end,+now));
+ const [{readings,truncated},choice,profile]=await Promise.all([
+  getLumiReadings(auth.meter.deviceId,new Date(+bounds.start-86400000),end),personalGoal(auth.userId,auth.meter),
+  repos.readings.hourlyProfile(auth.meter.deviceId,bounds.start,end),
+ ]);
+ const projection=buildMonthlyProjection({rows:readings as Parameters<typeof buildMonthlyProjection>[0]['rows'],month,now,choice,fixed:auth.meter.role==='central',tariffValid:process.env.ENERGY_TARIFF_ENABLED!=='false',intervalMinutes:auth.meter.collectionIntervalMinutes,truncated});
+ return NextResponse.json({...projection,role:auth.meter.role,meterName:auth.meter.name,profile:projection.quality.completeDays>=3?profile:null,profileMinDays:3,lookbackDays:bounds.days,recommendations:buildRecommendations(projection.goal,projection.quality.completeDays>=3?profile:null,{from:bounds.start.toISOString(),to:end.toISOString()})},{headers:{'Cache-Control':'private, no-store',Vary:'Cookie'}});
+ }catch(e){return apiError('forecast',e);}
 }

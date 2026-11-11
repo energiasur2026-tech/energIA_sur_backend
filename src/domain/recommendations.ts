@@ -29,7 +29,8 @@ const STANDBY_SHARE_THRESHOLD = 0.15;
 
 export function buildRecommendations(
   goal: GoalProgress,
-  profile: HourlyPoint[] | null
+  profile: HourlyPoint[] | null,
+  period?: {from:string;to:string}
 ): Recommendation[] {
   const recommendations: Recommendation[] = [];
 
@@ -41,14 +42,14 @@ export function buildRecommendations(
 
   // 1. Cuánto hay que recortar, en términos concretos y diarios.
   if (gap !== null && gap > 0 && goal.remainingPerDayKwh !== null) {
-    const dailyCut = round(gap / goal.daysInMonth, 2);
+    const dailyCut = round(Math.max(0,(goal.dailyRateKwh ?? 0)-goal.remainingPerDayKwh), 2);
     recommendations.push({
       id: 'required-cut',
-      title: `Necesitás bajar ${formatKwh(dailyCut)} kWh por día`,
+      title: goal.consumedKwh !== null && goal.goalKwh !== null && goal.consumedKwh > goal.goalKwh ? `Ya superaste el objetivo en ${formatKwh(goal.consumedKwh-goal.goalKwh)} kWh observados` : `Revisá el ritmo: diferencia diaria estimada de ${formatKwh(dailyCut)} kWh`,
       detail:
         `Al ritmo actual vas a terminar el mes en ${formatKwh(goal.projectedMonthKwh!)} kWh, ` +
         `${formatKwh(gap)} kWh por encima de tu objetivo. De acá en adelante te quedan ` +
-        `${formatKwh(goal.remainingPerDayKwh)} kWh por día para llegar.`,
+        `${formatKwh(goal.remainingPerDayKwh)} kWh por día según el tiempo restante. Superar lo ya consumido no puede revertirse; revisá los usos posibles sin afectar equipos necesarios.`,
       impact: `${formatKwh(gap)} kWh/mes`,
       tone: 'action',
     });
@@ -63,12 +64,12 @@ export function buildRecommendations(
     if (share >= STANDBY_SHARE_THRESHOLD) {
       recommendations.push({
         id: 'standby',
-        title: `Tenés ${Math.round(standby)} W encendidos las 24 horas`,
+        title: `Detectamos un consumo base nocturno cercano a ${Math.round(standby)} W`,
         detail:
-          `Es el consumo mínimo medido de madrugada, cuando no debería haber casi nada en uso. ` +
-          `Son ${formatKwh(standbyMonthlyKwh)} kWh al mes —el ${Math.round(share * 100)}% de tu objetivo— ` +
-          `en equipos que quedan en espera: televisores, cargadores, routers, fuentes conectadas.`,
-        impact: `hasta ${formatKwh(standbyMonthlyKwh)} kWh/mes`,
+          `Es la menor potencia media entre las franjas de 01 a 05 h con muestras. Período analizado: ${period?new Date(period.from).toLocaleString('es-AR',{timeZone:'America/Argentina/Buenos_Aires',hourCycle:'h23'})+' a '+new Date(period.to).toLocaleString('es-AR',{timeZone:'America/Argentina/Buenos_Aires',hourCycle:'h23'}):'el historial consultado'}. ` +
+          `Si esta potencia se mantuviera las 24 horas, equivaldría aproximadamente a ${formatKwh(standbyMonthlyKwh)} kWh al mes. ` +
+          'Es un escenario, no ahorro garantizado ni consumo totalmente evitable. No identifica aparatos y puede incluir equipos necesarios.',
+        impact: null,
         tone: 'action',
       });
     }
@@ -82,8 +83,7 @@ export function buildRecommendations(
       title: `Tu mayor consumo es entre las ${pad(peak.startHour)} y las ${pad(peak.endHour)} h`,
       detail:
         `En esa franja promediás ${Math.round(peak.avgPowerW)} W, bastante más que el resto del día. ` +
-        `Si querés recortar, es la ventana donde un cambio se nota: correr lavarropas o ` +
-        `termotanque fuera de ese horario mueve la aguja más que apagar luces.`,
+        `Revisá qué usos coinciden con ese horario antes de atribuirlo a un aparato. Mover un consumo de horario no reduce por sí solo su energía.`,
       impact: null,
       tone: 'info',
     });
@@ -115,11 +115,11 @@ function estimateStandbyWatts(profile: HourlyPoint[] | null): number | null {
   if (!profile) return null;
 
   const nightValues = profile
-    .filter((point) => NIGHT_HOURS.includes(point.hour) && point.samples > 0)
+    .filter((point) => NIGHT_HOURS.includes(point.hour) && point.samples >= 3)
     .map((point) => point.avgPowerW)
     .filter((value): value is number => value !== null);
 
-  if (nightValues.length === 0) return null;
+  if (nightValues.length < 3) return null;
 
   const minimum = Math.min(...nightValues);
   return minimum > 0 ? minimum : null;

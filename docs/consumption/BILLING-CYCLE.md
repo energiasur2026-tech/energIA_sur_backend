@@ -1,0 +1,12 @@
+# Consumo desde cierre de factura
+
+Opción adicional en la sección Consumo: Desde último cierre. El usuario indica una fecha real, no el vencimiento. Se consulta desde las 00:00 de esa fecha en Argentina hasta ahora; no se asume un mes calendario ni 30 días. Se guarda por usuario autenticado y medidor autorizado en user_meter_billing_cycles. Al recibir un nuevo cierre, el usuario actualiza la fecha; no se adivina el siguiente ciclo.
+
+Aplicar supabase/migrations/0020_billing_cycles.sql y publicar el backend actualizado. Sesión y pertenencia al medidor se revalidan en GET/PUT /api/meter/billing-cycle y GET /api/meter/consumption?period=billing. No se acepta user_id como autorización. La tabla tiene RLS, sin acceso directo del navegador: backend service role tras validación.
+
+Se reutiliza el repositorio periodConsumption y el mismo motor tarifario existente (cargo fijo prorrateado por días transcurridos, excluido en medidores de área). El resultado es consumo entre lecturas disponibles, no una factura completa. Si falta el inicio se advierte; si falta la fecha se solicita configurarla. Fechas inexistentes/futuras se rechazan. No se consultan nuevos proveedores ni se agregan colectores. Regresión: 247 tests de backend aprobados, incluyendo fechas, aislamiento, lectura real del período mediante adaptadores de prueba y acceso ajeno rechazado. TypeScript y ESLint de archivos afectados aprobados. No se modificaron datos de producción.
+
+## Corrección de Proyección
+La pantalla nueva suponía que toda respuesta 200 contenía tariff y quality. El frontend local usa BACKEND_URL=https://energia-sur-backend.netlify.app, por lo que recibía la respuesta anterior del backend publicado sin tariff y fallaba al leer tariff.valid. Se agregó validación estructural antes de guardar/renderizar la respuesta, con aviso de backend incompatible, sin inventar una tarifa válida ni datos. También se valida que Consumo devuelva el período solicitado, para que un backend anterior no muestre Hoy bajo la etiqueta Desde último cierre. Nueve verificaciones del contrato cubren respuesta antigua, campos ausentes y estructura actual.
+
+La validación impide el error de renderizado, pero no publica el backend ni aplica migraciones. Proyección requiere desplegar el código backend nuevo y la migración 0019. Esta mejora de Consumo requiere además 0020. No se cambió BACKEND_URL ni se realizaron pushes o despliegues.

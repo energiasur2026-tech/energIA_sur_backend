@@ -4,9 +4,9 @@ import { apiError } from '@/lib/api-error';
 import { supabaseRepositories as repos } from '@/infrastructure/supabase-repositories';
 
 /** Historial de anomalías del medidor del usuario, más reciente primero. */
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const auth = await requireMeter();
+    const auth = await requireMeter(request);
     if (isErrorResponse(auth)) return auth;
 
     return NextResponse.json({

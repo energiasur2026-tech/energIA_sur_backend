@@ -11,9 +11,9 @@ import { supabaseRepositories as repos } from '@/infrastructure/supabase-reposit
  * real del medidor, no sobre un número fijo: con guardado cada 6 horas,
  * exigirle una escritura cada 7 minutos sería un falso negativo garantizado.
  */
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const auth = await requireMeter();
+    const auth = await requireMeter(request);
     if (isErrorResponse(auth)) return auth;
 
     const intervalMinutes = auth.meter.collectionIntervalMinutes;

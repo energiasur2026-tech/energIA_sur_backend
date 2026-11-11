@@ -2,7 +2,9 @@ import { NextResponse } from 'next/server';
 import { apiError } from '@/lib/api-error';
 
 import { summarizeHome } from '@/domain/home-types';
-import { buildGoalProgress, monthBoundsArgentina } from '@/domain/goal';
+import { buildMonthlyProjection,argentinaMonth } from '@/domain/monthly-projection';
+import { getLumiReadings } from '@/lib/readings';
+import { personalGoal } from '@/lib/personal-goals';
 import { supabaseRepositories as repos } from '@/infrastructure/supabase-repositories';
 
 /**
@@ -38,24 +40,20 @@ export async function GET() {
 
     const meters = await repos.meters.forOwner(user.id);
     const now = new Date();
-    const { start: monthStart } = monthBoundsArgentina(now);
+    const month=argentinaMonth(now);
+    const monthStart=new Date(month+'-01T03:00:00Z');
 
     const summaries = await Promise.all(
       meters.map(async (meter) => {
-        const [latest, monthConsumption, activeEvents, home] = await Promise.all([
+        const [latest, monthData, activeEvents, home, choice] = await Promise.all([
           repos.readings.latest(meter.deviceId),
-          repos.readings.periodConsumption(meter.deviceId, monthStart, now),
+          getLumiReadings(meter.deviceId,new Date(+monthStart-86400000),now),
           repos.events.countActive(meter.deviceId),
           safeHomeContext(meter.deviceId),
+          personalGoal(user.id,meter),
         ]);
 
-        const consumedThisMonth =
-          monthConsumption.samples >= 2 &&
-          monthConsumption.firstEnergy !== null &&
-          monthConsumption.lastEnergy !== null &&
-          monthConsumption.lastEnergy >= monthConsumption.firstEnergy
-            ? monthConsumption.lastEnergy - monthConsumption.firstEnergy
-            : null;
+        const result=buildMonthlyProjection({rows:monthData.readings as Parameters<typeof buildMonthlyProjection>[0]['rows'],month,now,choice,fixed:meter.role==='central',tariffValid:process.env.ENERGY_TARIFF_ENABLED!=='false',intervalMinutes:meter.collectionIntervalMinutes,truncated:monthData.truncated});
 
         return {
           deviceId: meter.deviceId,
@@ -68,14 +66,7 @@ export async function GET() {
           latest,
           activeEvents,
           home: summarizeHome(home),
-          goal: buildGoalProgress({
-            goalKwh: meter.goalKwh,
-            inputMode: meter.goalInputMode,
-            consumedKwh: consumedThisMonth,
-            measuredFrom: monthConsumption.firstAt,
-            measuredTo: monthConsumption.lastAt,
-            now,
-          }),
+          goal:result.goal,
         };
       })
     );

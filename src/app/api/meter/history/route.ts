@@ -6,7 +6,7 @@ import { supabaseRepositories as repos } from '@/infrastructure/supabase-reposit
 
 export async function GET(request: Request) {
   try {
-    const meter = await requireMeter();
+    const meter = await requireMeter(request);
     if (isErrorResponse(meter)) return meter;
 
     const key = resolveRange(new URL(request.url).searchParams.get('range'));

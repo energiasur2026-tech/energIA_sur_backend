@@ -1,3 +1,5 @@
+import { getBillingClose } from '@/lib/billing-cycle';
+import { billingRange } from '@/domain/billing-cycle';
 import { NextResponse } from 'next/server';
 import { apiError } from '@/lib/api-error';
 import { isErrorResponse, requireMeter } from '@/lib/api-auth';
@@ -17,11 +19,14 @@ import { supabaseRepositories as repos } from '@/infrastructure/supabase-reposit
  */
 export async function GET(request: Request) {
   try {
-    const meter = await requireMeter();
+    const meter = await requireMeter(request);
     if (isErrorResponse(meter)) return meter;
 
+    const billing = new URL(request.url).searchParams.get('period') === 'billing';
     const key = resolvePeriod(new URL(request.url).searchParams.get('period'));
-    const { from, to, days } = periodRange(key);
+    const closedOn = billing ? await getBillingClose(meter.userId,meter.meter.deviceId) : null;
+    if(billing&&!closedOn)return NextResponse.json({period:'billing',label:'Desde último cierre',from:null,to:new Date().toISOString(),samples:0,firstAt:null,lastAt:null,available:false,reason:'billing_date_required',consumedKwh:null,cost:null},{headers:{'Cache-Control':'private, no-store'}});
+    const { from, to, days } = billing && closedOn ? billingRange(closedOn) : periodRange(key);
 
     const consumption = await repos.readings.periodConsumption(meter.meter.deviceId, from, to);
 
@@ -29,8 +34,10 @@ export async function GET(request: Request) {
       role: meter.meter.role,
       /** `false` en un medidor de área: el costo no incluye el cargo fijo. */
       billable: includesFixedCharge(meter.meter.role),
-      period: key,
-      label: PERIODS[key].label,
+      period: billing ? 'billing' : key,
+      closedOn,
+      partialPeriod: consumption.firstAt !== null && Date.parse(consumption.firstAt) > +from + 1000,
+      label: billing ? 'Desde último cierre' : PERIODS[key].label,
       from: from.toISOString(),
       to: to.toISOString(),
       samples: consumption.samples,

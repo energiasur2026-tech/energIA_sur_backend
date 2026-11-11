@@ -18,7 +18,7 @@ const TARGET_POINTS = 120;
 
 export async function GET(request: Request) {
   try {
-    const auth = await requireMeter();
+    const auth = await requireMeter(request);
     if (isErrorResponse(auth)) return auth;
 
     const params = new URL(request.url).searchParams;

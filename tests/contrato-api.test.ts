@@ -34,10 +34,12 @@ const CONTRATO: Record<string, string[]> = {
   'meter/collector-status': ['GET'],
   'meter/home': ['GET', 'PUT'],
   'meter/settings': ['GET', 'PUT'],
-  'meter/goal': ['PUT'],
+  'meter/goal': ['GET', 'PUT'],
+  'meter/billing-cycle': ['GET','PUT'],
   meters: ['GET'],
   profile: ['GET', 'PUT'],
   'meter/collect': ['POST'],
+  'lumi/v1': ['GET','POST'],
 };
 
 for (const [ruta, metodos] of Object.entries(CONTRATO)) {
@@ -54,16 +56,16 @@ for (const [ruta, metodos] of Object.entries(CONTRATO)) {
   });
 }
 
-test('el contrato tiene las 13 rutas, ni una más ni una menos', () => {
-  assert.equal(Object.keys(CONTRATO).length, 13);
+test('el contrato tiene las 15 rutas, ni una más ni una menos', () => {
+  assert.equal(Object.keys(CONTRATO).length, 15);
 });
 
-test('en total son 11 GET, 4 PUT y 1 POST', () => {
+test('en total son 14 GET, 5 PUT y 2 POST', () => {
   const todos = Object.values(CONTRATO).flat();
   const cuenta = (m: string) => todos.filter((x) => x === m).length;
-  assert.equal(cuenta('GET'), 11);
-  assert.equal(cuenta('PUT'), 4);
-  assert.equal(cuenta('POST'), 1);
+  assert.equal(cuenta('GET'), 14);
+  assert.equal(cuenta('PUT'), 5);
+  assert.equal(cuenta('POST'), 2);
 });
 
 // ----------------------------------------------------- respuestas de error
