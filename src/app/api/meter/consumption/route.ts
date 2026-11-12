@@ -1,3 +1,4 @@
+import {billingContext} from '@/lib/tariff-profile';
 import { getBillingClose } from '@/lib/billing-cycle';
 import { billingRange } from '@/domain/billing-cycle';
 import { NextResponse } from 'next/server';
@@ -68,7 +69,8 @@ export async function GET(request: Request) {
     // Un medidor de área no lleva cargo fijo: se paga una vez por
     // instalación, no por lugar. Su costo es informativo —cuánto de la
     // factura explica ese lugar— y no una factura aparte.
-    const cost = estimateEnergyCost(consumedKwh, days, includesFixedCharge(meter.meter.role));
+    const context=await billingContext(meter.userId,meter.meter.deviceId,from.toISOString(),to.toISOString());
+    const cost = !context.definition?null:estimateEnergyCost(consumedKwh, days, includesFixedCharge(meter.meter.role),context.configured?context:undefined);
 
     return NextResponse.json({
       ...base,
@@ -76,6 +78,7 @@ export async function GET(request: Request) {
       reason: null,
       consumedKwh,
       cost,
+      costUnavailableReason:cost?null:context.reason,
     });
   } catch (error) {
     return apiError('api/meter/consumption', error);

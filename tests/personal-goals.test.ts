@@ -1,5 +1,8 @@
 import test,{mock} from 'node:test';
 import assert from 'node:assert/strict';
+import {resolveTariff} from '../src/domain/electricity-billing.ts';
+let activeTariff=resolveTariff('SPSE','AR-Santa Cruz','unsubsidized','2026-10-01')!;
+mock.module('../src/lib/tariff-profile.ts',{namedExports:{billingContext:async()=>({configured:true,definition:activeTariff,from:'2026-10-01',to:'2026-10-31'})}});
 let user='A';let reads=0;const data=new Map<string,Record<string,unknown>>();
 const meters=[{deviceId:'a',ownerId:'A',goalKwh:266,goalInputMode:'kwh',role:'central'},{deviceId:'b',ownerId:'B',goalKwh:999,goalInputMode:'kwh',role:'central'}];
 mock.module('../src/lib/auth.ts',{namedExports:{getCurrentUser:async()=>({id:user})}});
@@ -20,8 +23,7 @@ test('save ARS and kWh preserves chosen value; user/meter isolation and forbidde
 
 test('tariff change updates equivalence without rewriting a saved ARS amount',async()=>{
  user='A';assert.equal((await PUT(req('a',{mode:'ars',value:50000}))).status,200);
- const {RESIDENCIAL_SIN_SUBSIDIO}=await import('../src/domain/tariffs.ts');
- const before=await (await GET(req('a'))).json();const original=RESIDENCIAL_SIN_SUBSIDIO.map(t=>t.valorTramo);
- try{RESIDENCIAL_SIN_SUBSIDIO.forEach(t=>t.valorTramo*=2);const after=await (await GET(req('a'))).json();assert.ok(after.kwh<before.kwh);assert.equal(data.get('A:a')!.input_value,50000);assert.equal(data.get('A:a')!.input_mode,'ars');}
- finally{RESIDENCIAL_SIN_SUBSIDIO.forEach((t,i)=>t.valorTramo=original[i]);}
+ const before=await (await GET(req('a'))).json();const original=activeTariff;
+ try{activeTariff={...original,id:'synthetic-next-version',tiers:original.tiers.map(t=>({...t,rate:t.rate*2}))};const after=await (await GET(req('a'))).json();assert.ok(after.kwh<before.kwh);assert.equal(data.get('A:a')!.input_value,50000);assert.equal(data.get('A:a')!.input_mode,'ars');assert.equal(data.get('A:a')!.tariff_version,original.id);}
+ finally{activeTariff=original;}
 });

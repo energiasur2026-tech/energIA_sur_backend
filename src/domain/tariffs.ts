@@ -1,8 +1,9 @@
+import { calculateElectricity, type BillingContext, type ElectricityBreakdown, type TariffDefinition } from './electricity-billing';
 /**
  * Cuadro tarifario SPSE · Residencial sin subsidio.
  *
- * Categoría confirmada para este medidor (vivienda de uso particular, sin
- * inscripción en el segmento de subsidio energético). Solo se factura el
+ * Cuadro heredado SIN categoría ni vigencia confirmadas para el cliente.
+ * Solo se conserva como referencia explícita; nunca valida una factura. Solo se factura el
  * cargo de energía: agua, cloaca y alumbrado quedan fuera de esta etapa por
  * decisión explícita, no por omisión.
  *
@@ -18,7 +19,7 @@ export interface TariffTier {
   valorTramo: number;
 }
 
-const DAYS_PER_MONTH = 30;
+
 
 export const RESIDENCIAL_SIN_SUBSIDIO: TariffTier[] = [
   { minKwh: 0, maxKwh: 100, cargoFijo: 15000, valorTramo: 116.053 },
@@ -33,6 +34,8 @@ export type EnergyCost = {
   fixedCharge: number;
   variableCharge: number;
   total: number;
+  breakdown?: ElectricityBreakdown;
+  warning?: string;
 };
 
 /**
@@ -49,34 +52,12 @@ export type EnergyCost = {
 export function estimateEnergyCost(
   consumedKwh: number,
   periodDays: number,
-  includeFixedCharge = true
+  includeFixedCharge = true,
+  context?: BillingContext
 ): EnergyCost {
-  // Los tramos del cuadro se expresan en enteros (0-100, 101-200, ...), así
-  // que entre uno y el siguiente queda un hueco: 100.5 kWh no pertenecía a
-  // ninguno. Buscar por ambos extremos hacía que esos consumos cayeran en el
-  // tramo de reserva —el más caro— y un consumo de 100.5 kWh terminaba
-  // costando más que uno de 150.
-  //
-  // Como los tramos están ordenados y son consecutivos, alcanza con el tope:
-  // el primero cuyo máximo no se supera es el que corresponde. Los bordes
-  // exactos (100, 101, 200, ...) siguen cayendo donde caían antes.
-  const tier =
-    RESIDENCIAL_SIN_SUBSIDIO.find((t) => consumedKwh <= t.maxKwh) ??
-    RESIDENCIAL_SIN_SUBSIDIO[RESIDENCIAL_SIN_SUBSIDIO.length - 1];
-
-  const fixedCharge = includeFixedCharge
-    ? round2((tier.cargoFijo * periodDays) / DAYS_PER_MONTH)
-    : 0;
-  const variableCharge = round2(tier.valorTramo * consumedKwh);
-
-  return {
-    tier,
-    fixedCharge,
-    variableCharge,
-    total: round2(fixedCharge + variableCharge),
-  };
-}
-
-function round2(value: number) {
-  return Math.round(value * 100) / 100;
+  if(context&&!context.definition)throw new Error('No hay una versión tarifaria para ese proveedor, categoría y período.');
+  const legacy:TariffDefinition={id:'spse-legacy-unverified',provider:'SPSE',jurisdiction:'AR-Santa Cruz',category:'Categoría sin confirmar · referencia heredada sin subsidio',segment:'unconfirmed',effectiveFrom:null,effectiveTo:null,source:'legacy-unverified',reviewedOn:'2026-11-11',rule:'selected-tier-all-kwh',referenceDays:30,tiers:RESIDENCIAL_SIN_SUBSIDIO.map((t,i)=>({maxKwh:i===RESIDENCIAL_SIN_SUBSIDIO.length-1?Infinity:t.maxKwh,fixed:t.cargoFijo,rate:t.valorTramo})),adjustmentsComplete:false,taxesComplete:false,credits:[],taxes:[]};
+  const quote=calculateElectricity(consumedKwh,periodDays,context?.definition??legacy,includeFixedCharge);
+  const selected=quote.tier;const index=(context?.definition??legacy).tiers.indexOf(selected);
+  return {tier:{minKwh:index?Math.floor((context?.definition??legacy).tiers[index-1].maxKwh)+1:0,maxKwh:Number.isFinite(selected.maxKwh)?selected.maxKwh:99999,cargoFijo:selected.fixed,valorTramo:selected.rate},fixedCharge:quote.fixedCharge,variableCharge:quote.variableCharge,total:quote.knownTotal,breakdown:quote,warning:context?'Importe parcial: no incluye ajustes ni tributos sin confirmar.':'Proveedor/categoría/vigencia sin confirmar. Referencia heredada; no valida una factura.'};
 }

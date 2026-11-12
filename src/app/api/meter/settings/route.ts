@@ -1,3 +1,4 @@
+import {saveMeterName} from '@/lib/meter-name';
 import { NextResponse } from 'next/server';
 import { isErrorResponse, meterIdFrom, requireMeter } from '@/lib/api-auth';
 import { apiError } from '@/lib/api-error';
@@ -20,6 +21,7 @@ export async function GET(request: Request) {
     return NextResponse.json({
       deviceId: auth.meter.deviceId,
       name: auth.meter.name,
+      isOwner: auth.meter.ownerId === auth.userId,
       collectionIntervalMinutes: auth.meter.collectionIntervalMinutes,
       alertsEnabled: auth.meter.alertsEnabled,
       thresholds: auth.meter.thresholds,
@@ -39,6 +41,7 @@ export async function PUT(request: Request) {
     if (isErrorResponse(auth)) return auth;
 
     const body = (await request.json().catch(() => null)) as {
+      name?: unknown;
       collectionIntervalMinutes?: unknown;
       alertsEnabled?: unknown;
       role?: unknown;
@@ -47,6 +50,15 @@ export async function PUT(request: Request) {
       sensitivity?: unknown;
       thresholds?: unknown;
     } | null;
+
+    if(body&&'name' in body){
+      const origin=request.headers.get('origin');
+      if(!origin||![new URL(request.url).origin,...(process.env.LUMI_ALLOWED_ORIGINS??'').split(',')].includes(origin))return NextResponse.json({error:'Origen no autorizado.'},{status:403});
+      if(auth.meter.ownerId!==auth.userId)return NextResponse.json({error:'Solo el propietario puede cambiar el nombre.'},{status:403});
+      if(Object.keys(body).some(k=>k!=='name')||typeof body.name!=='string'||!body.name.trim()||body.name.trim().length>60||/[\x00-\x1f<>]/.test(body.name))return NextResponse.json({error:'Ingresá un nombre de 1 a 60 caracteres, sin caracteres de control.'},{status:400});
+      const name=body.name.trim();await saveMeterName(auth.userId,auth.meter.deviceId,name);
+      return NextResponse.json({name},{headers:{'Cache-Control':'private, no-store'}});
+    }
 
     // Dónde está instalado el medidor: el tablero central de la instalación o
     // un área dentro de ella. Se puede cambiar solo, sin tocar lo demás.

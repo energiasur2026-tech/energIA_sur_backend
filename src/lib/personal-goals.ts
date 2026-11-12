@@ -1,3 +1,4 @@
+import {billingContext} from './tariff-profile';
 import 'server-only';
 import { supabase } from './supabase';
 import { convertGoal, TARIFF_VERSION, type GoalChoice } from '@/domain/monthly-projection';
@@ -10,9 +11,10 @@ export async function personalGoal(userId:string,meter:Meter):Promise<GoalChoice
  return meter.ownerId===userId&&meter.goalKwh!==null?{mode:'kwh',value:meter.goalKwh,tariffVersion:'legacy-kwh'}:null;
 }
 export async function savePersonalGoal(userId:string,meter:Meter,choice:GoalChoice){
- const {error}=await supabase().from('user_meter_goals').upsert({user_id:userId,device_id:meter.deviceId,input_mode:choice?.mode??'kwh',input_value:choice?.value??null,tariff_version:TARIFF_VERSION,updated_at:new Date().toISOString()},{onConflict:'user_id,device_id'});
+ const context=await billingContext(userId,meter.deviceId,new Date().toISOString());
+ const {error}=await supabase().from('user_meter_goals').upsert({user_id:userId,device_id:meter.deviceId,input_mode:choice?.mode??'kwh',input_value:choice?.value??null,tariff_version:context.definition?.id??TARIFF_VERSION,updated_at:new Date().toISOString()},{onConflict:'user_id,device_id'});
  if(error)throw new Error('No se pudo guardar el objetivo. Verificá la migración 0019.');
 }
 export async function withPersonalGoal(userId:string,meter:Meter):Promise<Meter>{
- const choice=await personalGoal(userId,meter);return {...meter,goalKwh:choice?convertGoal(choice.mode,choice.value,meter.role==='central',process.env.ENERGY_TARIFF_ENABLED!=='false').kwh:null,goalInputMode:choice?.mode??'kwh'};
+ const choice=await personalGoal(userId,meter);const context=await billingContext(userId,meter.deviceId,new Date().toISOString());return {...meter,goalKwh:choice?convertGoal(choice.mode,choice.value,meter.role==='central',process.env.ENERGY_TARIFF_ENABLED!=='false'&&!!context.definition,context).kwh:null,goalInputMode:choice?.mode??'kwh'};
 }

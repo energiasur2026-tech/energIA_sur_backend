@@ -40,3 +40,15 @@ test('tariff unavailable keeps kWh goals and suppresses ARS equivalence',()=>{
  const p=buildMonthlyProjection({...base,tariffValid:false,rows:rows('2026-11-01T03:00:00Z','2026-11-09T15:00:00Z')});assert.equal(p.goal.projectedCostArs,null);assert.equal(p.goal.goalKwh,120);
  for(const v of [0,-1,NaN,Infinity])assert.equal(convertGoal('kwh',v).kwh,null);
 });
+
+test('ARS chart uses backend tariff, preserves gaps, respects area fixed charges and budget',()=>{
+ const data=rows('2026-11-01T03:00:00Z','2026-11-09T15:00:00Z').filter((_,i)=>i<24||i>48);
+ for(const fixed of [true,false]){
+  const p=buildMonthlyProjection({...base,rows:data,fixed,choice:{mode:'ars',value:30000}});
+  assert.ok(p.chart.cost);assert.equal(p.chart.cost.references.at(-1)!.target,30000);assert.equal(p.chart.cost.references.at(-1)!.pace,30000);
+  assert.equal(p.chart.cost.estimated.at(-1)!.projected,p.goal.projectedCostArs);
+  p.chart.observed.forEach((point,i)=>assert.equal(p.chart.cost!.observed[i].real,point.real===null?null:estimateEnergyCost(point.real,30,fixed).total));
+  assert.ok(p.chart.cost.observed.some(point=>point.real===null));
+ }
+ const invalid=buildMonthlyProjection({...base,rows:data,tariffValid:false});assert.equal(invalid.chart.cost,null);
+});

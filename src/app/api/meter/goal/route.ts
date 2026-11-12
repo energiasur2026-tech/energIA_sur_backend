@@ -1,3 +1,4 @@
+import {billingContext} from '@/lib/tariff-profile';
 import { NextResponse } from 'next/server';
 import { requireMeter,isErrorResponse,meterIdFrom } from '@/lib/api-auth';
 import { apiError } from '@/lib/api-error';
@@ -8,8 +9,9 @@ export async function GET(request:Request){
  try{const auth=await requireMeter(meterIdFrom(request));if(isErrorResponse(auth))return auth;
  const q=new URL(request.url).searchParams,mode=q.get('mode'),value=Number(q.get('value'));
  if(!['ars','kwh'].includes(mode??''))return NextResponse.json({error:'Unidad inválida.'},{status:400,headers});
- const valid=process.env.ENERGY_TARIFF_ENABLED!=='false',fixed=auth.meter.role==='central';
- return NextResponse.json({...convertGoal(mode as 'ars'|'kwh',value,fixed,valid),tariff:tariffInfo(fixed,valid)},{headers});
+ const context=await billingContext(auth.userId,auth.meter.deviceId,new Date().toISOString());
+ const valid=process.env.ENERGY_TARIFF_ENABLED!=='false'&&!!context.definition,fixed=auth.meter.role==='central';
+ return NextResponse.json({...convertGoal(mode as 'ars'|'kwh',value,fixed,valid,context),tariff:tariffInfo(fixed,valid,context)},{headers});
  }catch(e){return apiError('goal/preview',e);}
 }
 export async function PUT(request:Request){
@@ -18,7 +20,8 @@ export async function PUT(request:Request){
  if(!body||!['ars','kwh'].includes(body.mode)||Object.keys(body).some(k=>!['mode','value'].includes(k)))return NextResponse.json({error:'Objetivo inválido.'},{status:400,headers});
  if(body.value===null){await savePersonalGoal(auth.userId,auth.meter,null);return NextResponse.json({goalKwh:null,goalCostArs:null,inputMode:body.mode},{headers});}
  if(typeof body.value!=='number')return NextResponse.json({error:'Ingresá un número válido.'},{status:400,headers});
- const quote=convertGoal(body.mode,body.value,auth.meter.role==='central',process.env.ENERGY_TARIFF_ENABLED!=='false');
+ const context=await billingContext(auth.userId,auth.meter.deviceId,new Date().toISOString());
+ const quote=convertGoal(body.mode,body.value,auth.meter.role==='central',process.env.ENERGY_TARIFF_ENABLED!=='false'&&!!context.definition,context);
  if(quote.error||quote.kwh===null||quote.kwh>20000)return NextResponse.json({error:quote.error??'El objetivo no puede superar 20.000 kWh.'},{status:400,headers});
  await savePersonalGoal(auth.userId,auth.meter,{mode:body.mode,value:body.value});
  return NextResponse.json({goalKwh:quote.kwh,goalCostArs:quote.ars,inputMode:body.mode,choice:await personalGoal(auth.userId,auth.meter)},{headers});

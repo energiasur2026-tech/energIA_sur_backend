@@ -1,3 +1,4 @@
+import {billingContext} from '@/lib/tariff-profile';
 import { NextResponse } from 'next/server';
 import { requireMeter,isErrorResponse,meterIdFrom } from '@/lib/api-auth';
 import { apiError } from '@/lib/api-error';
@@ -16,7 +17,8 @@ export async function GET(request:Request){
   getLumiReadings(auth.meter.deviceId,new Date(+bounds.start-86400000),end),personalGoal(auth.userId,auth.meter),
   repos.readings.hourlyProfile(auth.meter.deviceId,bounds.start,end),
  ]);
- const projection=buildMonthlyProjection({rows:readings as Parameters<typeof buildMonthlyProjection>[0]['rows'],month,now,choice,fixed:auth.meter.role==='central',tariffValid:process.env.ENERGY_TARIFF_ENABLED!=='false',intervalMinutes:auth.meter.collectionIntervalMinutes,truncated});
+ const tariffContext=await billingContext(auth.userId,auth.meter.deviceId,bounds.start.toISOString(),new Date(+bounds.end-1).toISOString());
+ const projection=buildMonthlyProjection({tariffContext,rows:readings as Parameters<typeof buildMonthlyProjection>[0]['rows'],month,now,choice,fixed:auth.meter.role==='central',tariffValid:process.env.ENERGY_TARIFF_ENABLED!=='false'&&!!tariffContext.definition,intervalMinutes:auth.meter.collectionIntervalMinutes,truncated});
  return NextResponse.json({...projection,role:auth.meter.role,meterName:auth.meter.name,profile:projection.quality.completeDays>=3?profile:null,profileMinDays:3,lookbackDays:bounds.days,recommendations:buildRecommendations(projection.goal,projection.quality.completeDays>=3?profile:null,{from:bounds.start.toISOString(),to:end.toISOString()})},{headers:{'Cache-Control':'private, no-store',Vary:'Cookie'}});
  }catch(e){return apiError('forecast',e);}
 }
