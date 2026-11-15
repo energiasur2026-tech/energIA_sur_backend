@@ -3,11 +3,11 @@ import assert from 'node:assert/strict';
 import {resolveTariff} from '../src/domain/electricity-billing.ts';
 let activeTariff=resolveTariff('SPSE','AR-Santa Cruz','unsubsidized','2026-10-01')!;
 mock.module('../src/lib/tariff-profile.ts',{namedExports:{billingContext:async()=>({configured:true,definition:activeTariff,from:'2026-10-01',to:'2026-10-31'})}});
-let user='A';let reads=0;const data=new Map<string,Record<string,unknown>>();
+let user='A';let reads=0;let storageFailure:{code:string;message?:string}|null=null;const data=new Map<string,Record<string,unknown>>();
 const meters=[{deviceId:'a',ownerId:'A',goalKwh:266,goalInputMode:'kwh',role:'central'},{deviceId:'b',ownerId:'B',goalKwh:999,goalInputMode:'kwh',role:'central'}];
 mock.module('../src/lib/auth.ts',{namedExports:{getCurrentUser:async()=>({id:user})}});
 mock.module('../src/lib/meters.ts',{namedExports:{getMeterForOwner:async()=>user==='C'?meters[0]:meters.find(m=>m.ownerId===user),getAccessibleMeter:async(id:string,deviceId:string)=>(id==='C'?[meters[0]]:meters.filter(m=>m.ownerId===id)).find(m=>m.deviceId===deviceId)}});
-mock.module('../src/lib/supabase.ts',{namedExports:{supabase:()=>({from:()=>{const filter:Record<string,string>={};return {select(){return this;},eq(k:string,v:string){filter[k]=v;return this;},async maybeSingle(){reads++;return {data:data.get(filter.user_id+':'+filter.device_id)??null,error:null};},async upsert(value:Record<string,unknown>){data.set(value.user_id+':'+value.device_id,value);return {error:null};}};}})}});
+mock.module('../src/lib/supabase.ts',{namedExports:{supabase:()=>({from:()=>{const filter:Record<string,string>={};return {select(){return this;},eq(k:string,v:string){filter[k]=v;return this;},async maybeSingle(){reads++;return {data:data.get(filter.user_id+':'+filter.device_id)??null,error:null};},async upsert(value:Record<string,unknown>){if(storageFailure)return {error:storageFailure};data.set(value.user_id+':'+value.device_id,value);return {error:null};}};}})}});
 const {GET,PUT}=await import('../src/app/api/meter/goal/route.ts');
 const {requireMeter,isErrorResponse}=await import('../src/lib/api-auth.ts');
 const req=(meter:string,body?:object)=>new Request('http://localhost/api/meter/goal?meterId='+meter+'&mode=ars&value=50000',{method:body?'PUT':'GET',headers:{'content-type':'application/json'},body:body?JSON.stringify(body):undefined});
@@ -26,4 +26,20 @@ test('tariff change updates equivalence without rewriting a saved ARS amount',as
  const before=await (await GET(req('a'))).json();const original=activeTariff;
  try{activeTariff={...original,id:'synthetic-next-version',tiers:original.tiers.map(t=>({...t,rate:t.rate*2}))};const after=await (await GET(req('a'))).json();assert.ok(after.kwh<before.kwh);assert.equal(data.get('A:a')!.input_value,50000);assert.equal(data.get('A:a')!.input_mode,'ars');assert.equal(data.get('A:a')!.tariff_version,original.id);}
  finally{activeTariff=original;}
+});
+
+test('missing goal schema and connection failures preserve the saved goal with actionable errors',async()=>{
+ user='A';await PUT(req('a',{mode:'kwh',value:266}));
+ try {
+  storageFailure={code:'PGRST205'};
+  let response=await PUT(req('a',{mode:'ars',value:50000}));
+  assert.equal(response.status,503);let body=await response.json();
+  assert.equal(body.code,'GOAL_SCHEMA_MISSING');assert.match(body.error,/0019/);
+  assert.equal(data.get('A:a')!.input_value,266);
+  storageFailure={code:'',message:'TypeError: fetch failed'};
+  response=await PUT(req('a',{mode:'kwh',value:300}));body=await response.json();
+  assert.equal(body.code,'GOAL_STORAGE_UNAVAILABLE');assert.doesNotMatch(body.error,/0019/);
+  assert.equal(data.get('A:a')!.input_value,266);
+ } finally {storageFailure=null;}
+ assert.equal((await PUT(req('a',{mode:'ars',value:50000}))).status,200);
 });

@@ -28,8 +28,8 @@ async function handle(request: Request) {
       const permitted = fields[String(action.action)];
       if (!permitted || Object.keys(action).some(k => !permitted.includes(k))) throw new SyntaxError();
       if (action.action === 'memory') {
-        if (!['list', 'update', 'delete'].includes(String(action.operation))) throw new SyntaxError();
-        if (action.operation !== 'list' && (typeof action.id !== 'string' || !/^[a-f0-9]{24}$/.test(action.id))) throw new SyntaxError();
+        if (!['list', 'update', 'delete', 'clearPatterns'].includes(String(action.operation))) throw new SyntaxError();
+        if (!['list', 'clearPatterns'].includes(String(action.operation)) && (typeof action.id !== 'string' || !/^[a-f0-9]{24}$/.test(action.id))) throw new SyntaxError();
         if (action.operation === 'update' && (typeof action.text !== 'string' || !action.text.trim() || action.text.length > 1000)) throw new SyntaxError();
       }
       if (action.action === 'recommendation' && (action.kind !== 'kettle-water' || typeof action.adopted !== 'boolean')) throw new SyntaxError();
@@ -86,13 +86,13 @@ async function handle(request: Request) {
       const start=new Date(requestedPeriod.from),proposedEnd=new Date(requestedPeriod.to);
       const end=new Date(Math.min(+proposedEnd,+to));
       if(Number.isFinite(+start)&&Number.isFinite(+proposedEnd)&&Number.isFinite(+end)&&start>=from&&+proposedEnd<=+to+60000&&start<end){
-        const tariff=await billingContext(auth.userId,auth.meter.deviceId,start.toISOString(),end.toISOString());
+        const tariff=await billingContext(auth.userId,auth.meter.deviceId,start.toISOString(),end.toISOString(),{allowBaseWithoutBonus:true});
         const points=readings.filter((row):row is Record<string,unknown>&{recorded_at:string}=>typeof row.recorded_at==='string');
         billingQuote=lumiBillingQuote(tariff,points,auth.meter.role,auth.meter.collectionIntervalMinutes,truncated);
       }
     }
     const data = await lumiService({ ...action, context, meterName: auth.meter.name,
-      readings, latest, truncated, period, dataToolError, supplyProfile, billingQuote, supply: { phases: auth.meter.phases }, goalKwh: action.action === 'goal' ? action.goalKwh : auth.meter.ownerId === auth.userId ? auth.meter.goalKwh : null, timezone: 'America/Argentina/Buenos_Aires', intervalMinutes: auth.meter.collectionIntervalMinutes,
+      readings, latest, truncated, period, dataToolError, supplyProfile, billingQuote, supply: { phases: auth.meter.phases }, goalKwh: action.action === 'goal' ? action.goalKwh : auth.meter.ownerId === auth.userId ? auth.meter.goalKwh : null, timezone: supplyProfile.timezone, intervalMinutes: auth.meter.collectionIntervalMinutes,
       thresholds: auth.meter.thresholds, window: { from: from.toISOString(), to: to.toISOString() } });
     return reply(data);
   } catch (error) {

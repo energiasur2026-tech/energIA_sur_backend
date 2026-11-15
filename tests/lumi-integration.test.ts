@@ -75,8 +75,16 @@ test('real signed Python pipeline: reads, period, persistence, two users, two me
     for(const question of ['Acabo de conectar el lavarropas, ¿consume mucha energía?','¿Cuánta electricidad gasta una lavadora?']){
       const result=await POST(request('meter-a',{action:'chat',question}));assert.equal(result.status,200);const answer=await result.json();assert.match(answer.answer.text,/programa/);assert.doesNotMatch(answer.answer.text,/De qué período/);assert.equal(queried.length,0);
     }
+    for (const [question, expected] of [['HOLAAA', /¿Cómo va/], ['¿Cómo estás?', /Vos cómo estás/], ['grasias', /De nada/], ['¿Una pava consume mucho?', /0,10 kWh/], ['¿Y cuánto gastaría si la uso dos veces?', /0,20 kWh/]] as const) {
+      const answer=await (await POST(request('meter-a2',{action:'chat',question}))).json();
+      assert.match(answer.answer.text,expected);assert.equal(queried.length,0);
+    }
+    const deletedPatterns=await POST(request('meter-a2',{action:'memory',operation:'clearPatterns'}));
+    assert.equal(deletedPatterns.status,200);assert.equal((await deletedPatterns.json()).routines,null);
     const supplier=await (await POST(request('meter-a',{action:'chat',question:'Vivo en Santa Cruz, ¿quién es el proveedor de energía?'}))).json();assert.match(supplier.answer.text,/SPSE/);assert.match(supplier.answer.text,/configuración/);
-    const priced=await (await POST(request('meter-a',{action:'chat',question:'¿Cuánto gasté en pesos hoy?'}))).json();assert.equal(priced.answer.intent,'cost');assert.match(priced.answer.text,/referencia de cargos/);assert.match(priced.answer.text,/1,250/);assert.match(priced.answer.text,/Cobertura/);
+    const priced=await (await POST(request('meter-a',{action:'chat',question:'Cuanto gaste hoy en $ ?'}))).json();assert.equal(priced.answer.intent,'cost');assert.match(priced.answer.text,/referencia de cargos/);assert.match(priced.answer.text,/1,250/);assert.match(priced.answer.text,/Cobertura/);
+    const continued=await (await POST(request('meter-a',{action:'chat',question:'listo, ya actualice la informacion, ahora decime cuanto gaste'}))).json();
+    assert.equal(continued.answer.intent,'cost');assert.match(continued.answer.text,/referencia de cargos/);assert.doesNotMatch(continued.answer.text,/Última lectura/);
     const unconfigured=await (await POST(request('meter-a2',{action:'chat',question:'¿Quién me provee electricidad?'}))).json();assert.match(unconfigured.answer.text,/localidad/);
     await POST(request('meter-a2',{action:'clear'}));await POST(request('meter-a',{action:'clear'}));queried=[];
     let memoryResponse=await POST(request('meter-a',{action:'chat',question:'Siempre a las 9 conecto la pava eléctrica'}));

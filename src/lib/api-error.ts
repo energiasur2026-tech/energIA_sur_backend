@@ -3,6 +3,7 @@ import 'server-only';
 import { NextResponse } from 'next/server';
 import { MissingEnvError } from './env';
 import { TuyaError } from './tuya';
+import { GoalStorageError } from './goal-storage-error';
 
 /**
  * Traduce un error interno en una respuesta HTTP.
@@ -13,6 +14,10 @@ import { TuyaError } from './tuya';
 export function apiError(scope: string, error: unknown) {
   const detail = error instanceof Error ? error.message : String(error);
   console.error(`[${scope}] ${detail}`);
+
+  if (error instanceof GoalStorageError) {
+    return NextResponse.json({code:error.code,error:error.message},{status:error.status,headers:{'Cache-Control':'private, no-store',Vary:'Cookie'}});
+  }
 
   if (error instanceof MissingEnvError) {
     return NextResponse.json(
