@@ -297,14 +297,18 @@ function num(value: unknown): number | null {
 /** Authorized device must be resolved before calling. Bounded, paginated stored data only. */
 export async function getLumiReadings(deviceId: string, from: Date, to: Date) {
   const rows: Record<string, unknown>[] = [];
-  for (let offset = 0; offset <= 60000; offset += 1000) {
+  // A project may cap REST pages below 1000 rows. Advance by the actual
+  // returned count; a short page does not mean the month has ended.
+  let offset = 0;
+  while (rows.length <= 60000) {
     const { data, error } = await supabase().from('readings')
       .select('recorded_at, voltage, current, power_w, total_energy_kwh')
       .eq('device_id', deviceId).gte('recorded_at', from.toISOString()).lt('recorded_at', to.toISOString())
-      .order('recorded_at', { ascending: false }).range(offset, offset + 999);
+      .order('recorded_at', { ascending: false }).range(offset, Math.min(offset + 999, 60000));
     if (error) throw new Error('No se pudo recuperar el historial almacenado.');
     rows.push(...(data ?? []));
-    if (!data || data.length < 1000) break;
+    if (!data?.length) break;
+    offset += data.length;
   }
   const truncated = rows.length > 60000;
   return { readings: rows.slice(0, 60000).reverse(), truncated };

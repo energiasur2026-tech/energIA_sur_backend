@@ -52,3 +52,19 @@ test('ARS chart uses backend tariff, preserves gaps, respects area fixed charges
  }
  const invalid=buildMonthlyProjection({...base,rows:data,tariffValid:false});assert.equal(invalid.chart.cost,null);
 });
+
+
+test('energy numeric strings retain the real last reading on November 16 without inventing missing days',()=>{
+ const result=buildMonthlyProjection({month:'2026-11',now:new Date('2026-11-16T18:00:00Z'),choice:null,rows:[
+  {recorded_at:'2026-11-03T15:00:00Z',total_energy_kwh:100},
+  {recorded_at:'2026-11-16T17:45:00Z',total_energy_kwh:'125.50'},
+  {recorded_at:'2026-11-16T17:50:00Z',total_energy_kwh:null},
+  {recorded_at:'2026-11-16T17:55:00Z',total_energy_kwh:''},
+ ]});
+ assert.equal(result.measuredTo,'2026-11-16T17:45:00Z');
+ assert.equal(result.latestStoredAt,'2026-11-16T17:55:00Z');
+ assert.equal(result.measuredKwh,25.5);
+ assert.equal(result.chart.observed.filter(point=>point.real!==null).at(-1)?.real,25.5);
+ assert.ok(result.chart.observed.some(point=>point.real===null));
+ assert.equal(result.monthDaily.length,2);
+});

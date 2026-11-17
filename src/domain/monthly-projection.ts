@@ -33,7 +33,11 @@ export function buildMonthlyProjection(input:{rows:StoredPoint[];month:string;no
  const now=input.now??new Date(), c=calendarMonth(input.month,now), valid=input.tariffValid!==false&&!(input.tariffContext?.configured&&!input.tariffContext.definition), fixed=input.fixed!==false;
  const resolved=input.choice?convertGoal(input.choice.mode,input.choice.value,fixed,valid,input.tariffContext):null;
  const target=resolved?.kwh??null;
- const rows=input.rows.filter(r=>Number.isFinite(Date.parse(r.recorded_at))&&Date.parse(r.recorded_at)<=Math.min(+now,+c.end)&&typeof r.total_energy_kwh==='number'&&Number.isFinite(r.total_energy_kwh)&&Number(r.total_energy_kwh)>=0)
+ // Postgres numeric values may arrive as strings through an adapter. Reject
+ // blanks/nulls rather than converting missing energy to zero.
+ const normalized=input.rows.map(row=>({...row,total_energy_kwh:typeof row.total_energy_kwh==='string'&&/^\d+(?:\.\d+)?$/.test(row.total_energy_kwh.trim())?Number(row.total_energy_kwh):row.total_energy_kwh}));
+ const latestStoredAt=input.rows.filter(row=>Number.isFinite(Date.parse(row.recorded_at))&&Date.parse(row.recorded_at)>=+c.start&&Date.parse(row.recorded_at)<+c.end&&Date.parse(row.recorded_at)<=+now).map(row=>row.recorded_at).sort((a,b)=>Date.parse(a)-Date.parse(b)).at(-1)??null;
+ const rows=normalized.filter(r=>Number.isFinite(Date.parse(r.recorded_at))&&Date.parse(r.recorded_at)<=Math.min(+now,+c.end)&&typeof r.total_energy_kwh==='number'&&Number.isFinite(r.total_energy_kwh)&&Number(r.total_energy_kwh)>=0)
  .sort((a,b)=>Date.parse(a.recorded_at)-Date.parse(b.recorded_at)).filter((r,i,a)=>!i||r.recorded_at!==a[i-1].recorded_at);
  const inside=rows.filter(r=>Date.parse(r.recorded_at)>=+c.start&&Date.parse(r.recorded_at)<+c.end);
  const before=rows.filter(r=>Date.parse(r.recorded_at)<=+c.start).at(-1);
@@ -88,6 +92,6 @@ export function buildMonthlyProjection(input:{rows:StoredPoint[];month:string;no
   observed:observed.map(point=>({x:point.x,real:point.real===null?null:estimateEnergyCost(point.real,30,fixed,input.tariffContext?.configured?input.tariffContext:undefined).total})),
   estimated:estimated.map(point=>({x:point.x,projected:estimateEnergyCost(point.projected,30,fixed,input.tariffContext?.configured?input.tariffContext:undefined).total})),
  } : null;
- return {chart:{references,observed,estimated,cost},goal,choice:input.choice,tariff:tariffInfo(fixed,valid,input.tariffContext),month:c.month,daysInMonth:c.days,todayX:input.month===argentinaMonth(now)?1+c.elapsed:null,monthStart:c.start.toISOString(),monthEnd:c.end.toISOString(),measuredFrom:first?.recorded_at??null,measuredTo:last?.recorded_at??null,measuredKwh,estimatedToDateKwh:estimateNow,missingStart,exceededKwh:target!==null&&measuredKwh!==null?Math.max(0,measuredKwh-target):null,remainingDays,quality:{coverage,gaps,resets,stale,completeDays:completeDays.size,samples:inside.length,truncated:!!input.truncated},warnings,monthDaily:points,gapDays:[...gapDays],method:'Estimación basada en el ritmo observado: energía entre extremos / duración exacta observada; consumo observado + inicio no medido estimado + ritmo × tiempo restante.'};
+ return {chart:{references,observed,estimated,cost},goal,choice:input.choice,tariff:tariffInfo(fixed,valid,input.tariffContext),month:c.month,daysInMonth:c.days,todayX:input.month===argentinaMonth(now)?1+c.elapsed:null,monthStart:c.start.toISOString(),monthEnd:c.end.toISOString(),latestStoredAt,measuredFrom:first?.recorded_at??null,measuredTo:last?.recorded_at??null,measuredKwh,estimatedToDateKwh:estimateNow,missingStart,exceededKwh:target!==null&&measuredKwh!==null?Math.max(0,measuredKwh-target):null,remainingDays,quality:{coverage,gaps,resets,stale,completeDays:completeDays.size,samples:inside.length,truncated:!!input.truncated},warnings,monthDaily:points,gapDays:[...gapDays],method:'Estimación basada en el ritmo observado: energía entre extremos / duración exacta observada; consumo observado + inicio no medido estimado + ritmo × tiempo restante.'};
 }
 export type MonthlyProjection = ReturnType<typeof buildMonthlyProjection>;
