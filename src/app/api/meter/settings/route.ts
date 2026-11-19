@@ -118,8 +118,9 @@ export async function PUT(request: Request) {
     // Grado de sensibilidad de las alertas de tensión. Reescribe también los
     // umbrales: el grado es la explicación de esos dos números, y dejarlos
     // desacoplados permitiría que la pantalla diga "alta" y la detección use
-    // otro rango.
-    if (body?.sensitivity !== undefined) {
+    // otro rango. Si el cliente envió umbrales personalizados explícitos, no se
+    // pisan con un preset.
+    if (body?.sensitivity !== undefined && body?.thresholds === undefined) {
       if (!isSelectableSensitivity(body.sensitivity)) {
         return NextResponse.json(
           { error: 'La sensibilidad debe ser "alta", "media" o "baja".' },

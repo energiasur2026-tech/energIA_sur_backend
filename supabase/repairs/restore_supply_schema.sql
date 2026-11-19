@@ -1,5 +1,5 @@
 -- Run in the Supabase SQL Editor for the same project used by the backend.
--- Equivalent supply schema to migrations 0021-0023. Repeatable; no row deletion.
+-- Equivalent supply schema to migrations 0021-0026. Repeatable; no row deletion.
 -- Requires the existing public.meters table. Transaction rolls back on failure.
 begin;
 create table if not exists public.user_meter_tariff_profiles (
@@ -22,11 +22,10 @@ alter table public.user_meter_tariff_profiles add column if not exists category 
 alter table public.user_meter_tariff_profiles add column if not exists category_text text not null default '';
 alter table public.user_meter_tariff_profiles add column if not exists bonus text not null default '';
 alter table public.user_meter_tariff_profiles add column if not exists provider_confirmed boolean not null default false;
+alter table public.user_meter_tariff_profiles drop constraint if exists supply_provider_check;
+alter table public.user_meter_tariff_profiles add constraint supply_provider_check check(provider in ('','SPSE','EDESUR','COOPRG','other'));
 do $$
 begin
- if not exists (select 1 from pg_constraint where conrelid='public.user_meter_tariff_profiles'::regclass and conname='supply_provider_check') then
-  alter table public.user_meter_tariff_profiles add constraint supply_provider_check check(provider in ('','SPSE','other'));
- end if;
  if not exists (select 1 from pg_constraint where conrelid='public.user_meter_tariff_profiles'::regclass and conname='supply_segment_check') then
   alter table public.user_meter_tariff_profiles add constraint supply_segment_check check(segment in ('','subsidized','unsubsidized'));
  end if;
@@ -40,5 +39,11 @@ begin
   alter table public.user_meter_tariff_profiles add constraint category_text_length check(length(category_text)<=120);
  end if;
 end $$;
+alter table public.user_meter_tariff_profiles add column if not exists supply_type text not null default ''
+  check (supply_type in ('', 'single-phase', 'three-phase'));
+alter table public.user_meter_tariff_profiles add column if not exists construction_charge text not null default ''
+  check (construction_charge in ('', 'yes', 'no'));
+alter table public.user_meter_tariff_profiles add column if not exists provider_name text not null default ''
+  check (char_length(provider_name)<=80);
 notify pgrst, 'reload schema';
 commit;

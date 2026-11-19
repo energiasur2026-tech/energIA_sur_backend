@@ -13,6 +13,7 @@ import {
   DEVICE_ID_ERROR_MESSAGE,
 } from '@/domain/device-linking';
 import { isValidPhases } from '@/domain/installation-types';
+import { parsePlacement, PLACEMENT_ERROR_MESSAGE } from '@/domain/meter-role';
 import { deviceExists } from '@/lib/tuya';
 
 /**
@@ -54,7 +55,7 @@ export async function GET() {
     const summaries = await Promise.all(
       meters.map(async (meter) => {
         const [latest, monthData, activeEvents, home, choice] = await Promise.all([
-          repos.readings.latest(meter.deviceId),
+          repos.readings.latest(meter.deviceId).then(latest=>({latest,syncError:false}),()=>({latest:null,syncError:true})),
           getLumiReadings(meter.deviceId,new Date(+monthStart-86400000),now),
           repos.events.countActive(meter.deviceId),
           safeHomeContext(meter.deviceId),
@@ -77,7 +78,8 @@ export async function GET() {
            * 403. Se informa el permiso, no el id del dueño.
            */
           isOwner: meter.ownerId === user.id,
-          latest,
+          ...latest,
+          collectionIntervalMinutes:meter.collectionIntervalMinutes,
           activeEvents,
           home: summarizeHome(home),
           goal:result.goal,
@@ -118,6 +120,8 @@ export async function POST(request: Request) {
       deviceId?: unknown;
       name?: unknown;
       phases?: unknown;
+      role?: unknown;
+      areaLabel?: unknown;
     } | null;
 
     const id = parseDeviceId(body?.deviceId);
@@ -131,6 +135,9 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
+
+    const placement=body?.role===undefined?undefined:parsePlacement({role:body.role,areaLabel:body.areaLabel});
+    if(placement&&!placement.ok)return NextResponse.json({error:PLACEMENT_ERROR_MESSAGE[placement.error]},{status:400});
 
     if (await repos.meters.isLinked(id.deviceId)) {
       return NextResponse.json(
@@ -155,6 +162,7 @@ export async function POST(request: Request) {
       ownerId: user.id,
       name: parseMeterName(body?.name),
       phases: isValidPhases(body?.phases) ? body.phases : 1,
+      ...(placement?.ok?{placement:placement.placement}:{}),
     });
 
     return NextResponse.json(

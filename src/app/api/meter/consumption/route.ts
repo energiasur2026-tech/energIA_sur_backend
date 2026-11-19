@@ -70,7 +70,7 @@ export async function GET(request: Request) {
     // instalación, no por lugar. Su costo es informativo —cuánto de la
     // factura explica ese lugar— y no una factura aparte.
     const context=await billingContext(meter.userId,meter.meter.deviceId,from.toISOString(),to.toISOString());
-    const cost = !context.definition?null:estimateEnergyCost(consumedKwh, days, includesFixedCharge(meter.meter.role),context.configured?context:undefined);
+    const cost = !context.definition?null:estimateEnergyCost(consumedKwh, days, includesFixedCharge(meter.meter.role),context.configured?context:undefined,context.definition.provider==='EDESUR'&&!billing?context.category:undefined);
 
     return NextResponse.json({
       ...base,

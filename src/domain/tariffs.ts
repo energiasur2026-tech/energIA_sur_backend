@@ -53,11 +53,12 @@ export function estimateEnergyCost(
   consumedKwh: number,
   periodDays: number,
   includeFixedCharge = true,
-  context?: BillingContext
+  context?: BillingContext,
+  referenceCategory?: string
 ): EnergyCost {
   if(context&&!context.definition)throw new Error('No hay una versión tarifaria para ese proveedor, categoría y período.');
   const legacy:TariffDefinition={id:'spse-legacy-unverified',provider:'SPSE',jurisdiction:'AR-Santa Cruz',category:'Categoría sin confirmar · referencia heredada sin subsidio',segment:'unconfirmed',effectiveFrom:null,effectiveTo:null,source:'legacy-unverified',reviewedOn:'2026-11-11',rule:'selected-tier-all-kwh',referenceDays:30,tiers:RESIDENCIAL_SIN_SUBSIDIO.map((t,i)=>({maxKwh:i===RESIDENCIAL_SIN_SUBSIDIO.length-1?Infinity:t.maxKwh,fixed:t.cargoFijo,rate:t.valorTramo})),adjustmentsComplete:false,taxesComplete:false,credits:[],taxes:[]};
-  const quote=calculateElectricity(consumedKwh,periodDays,context?.definition??legacy,includeFixedCharge);
+  const quote=calculateElectricity(consumedKwh,periodDays,context?.definition??legacy,includeFixedCharge,referenceCategory);
   const selected=quote.tier;const index=(context?.definition??legacy).tiers.indexOf(selected);
   return {tier:{minKwh:index?Math.floor((context?.definition??legacy).tiers[index-1].maxKwh)+1:0,maxKwh:Number.isFinite(selected.maxKwh)?selected.maxKwh:99999,cargoFijo:selected.fixed,valorTramo:selected.rate},fixedCharge:quote.fixedCharge,variableCharge:quote.variableCharge,total:quote.knownTotal,breakdown:quote,warning:context?'Importe parcial: no incluye ajustes ni tributos sin confirmar.':'Proveedor/categoría/vigencia sin confirmar. Referencia heredada; no valida una factura.'};
 }

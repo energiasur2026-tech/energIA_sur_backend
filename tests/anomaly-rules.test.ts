@@ -257,3 +257,28 @@ test('varios huecos en la misma tanda se registran todos', () => {
   const p = plan([lec(0, 220), lec(20, 220), lec(60, 220)], { evaluadoHasta: en(0) });
   assert.equal(p.gaps.length, 2);
 });
+
+test('un intervalo de recolección mayor a gapMinutes no genera falsos huecos de conectividad', () => {
+  const p = planAnomalies({
+    readings: [lec(0, 220), lec(60, 220), lec(120, 220)],
+    thresholds: UMBRALES,
+    openEvents: new Map(),
+    evaluatedAt: en(0),
+    collectionIntervalMinutes: 60,
+  });
+  assert.equal(p.gaps.length, 0);
+
+  const pGap = planAnomalies({
+    readings: [lec(0, 220), lec(100, 220)],
+    thresholds: UMBRALES,
+    openEvents: new Map(),
+    evaluatedAt: en(0),
+    collectionIntervalMinutes: 60,
+  });
+  assert.equal(pGap.gaps.length, 1);
+});
+
+test('un pico puntual de potencia sin sobrecorriente ni tensión fuera de rango no abre anomalía', () => {
+  const p = plan([lec(0, 220, 1, 200), lec(5, 220, 10, 2200), lec(10, 220, 1, 200)]);
+  assert.equal(p.episodes.length, 0);
+});

@@ -31,6 +31,7 @@ export async function detectAnomalies(meter: Meter): Promise<DetectionResult> {
       deviceId: meter.deviceId,
       thresholds: meter.thresholds,
       anomaliesEvaluatedAt: meter.anomaliesEvaluatedAt,
+      collectionIntervalMinutes: meter.collectionIntervalMinutes,
     },
     supabaseAnomalyDeps
   );

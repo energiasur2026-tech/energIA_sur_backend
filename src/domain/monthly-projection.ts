@@ -9,16 +9,16 @@ export function tariffInfo(includeFixed = true, valid = true, context?:BillingCo
  included:!valid?[]:includeFixed?['Cargo fijo mensual','Cargo variable según tramo del consumo total']:['Cargo variable según tramo del consumo total'],
  excluded:['Impuestos no configurados','Agua','Cloaca','Alumbrado y otros conceptos'], note:!valid?(context?.reason??'No hay una versión documentada para este período.'):definition?'Cargos eléctricos de referencia. Ajustes, impuestos y regla de liquidación pendientes; no es un total final ni incluye otros servicios.':'Tarifa/categoría/vigencia sin confirmar. Referencia heredada; no valida una factura.' };
 }
-export function convertGoal(mode:GoalInputMode, value:number, fixed=true, valid=true, context?:BillingContext) {
+export function convertGoal(mode:GoalInputMode, value:number, fixed=true, valid=true, context?:BillingContext, days=30) {
  if(context?.configured&&!context.definition)valid=false;
  if (!Number.isFinite(value)||value<=0) return {kwh:null,ars:null,error:'Ingresá un número mayor a cero.'};
- if (!valid) return {kwh:mode==='kwh'?value:null,ars:null,error:mode==='ars'?'No hay una tarifa válida. Podés guardar el objetivo en kWh.':null};
- if(mode==='kwh') return {kwh:value,ars:estimateEnergyCost(value,30,fixed,context?.configured?context:undefined).total,error:null};
- if(value<=estimateEnergyCost(0,30,fixed,context?.configured?context:undefined).total) return {kwh:null,ars:value,error:'El presupuesto no supera los cargos fijos incluidos; no deja margen para consumo.'};
+ if (!valid) return {kwh:mode==='kwh'?value:null,ars:mode==='ars'?value:null,error:null};
+ if(mode==='kwh') return {kwh:value,ars:estimateEnergyCost(value,days,fixed,context?.configured?context:undefined).total,error:null};
+ if(value<=estimateEnergyCost(0,days,fixed,context?.configured?context:undefined).total) return {kwh:null,ars:value,error:'El presupuesto no supera los cargos fijos incluidos; no deja margen para consumo.'};
  // Invert the SAME monotone, discontinuous tariff, returning the largest affordable consumption.
  let low=0,high=1;
- while(high<1e9&&estimateEnergyCost(high,30,fixed,context?.configured?context:undefined).total<=value)high*=2;
- for(let i=0;i<70;i++){const mid=(low+high)/2;if(estimateEnergyCost(mid,30,fixed,context?.configured?context:undefined).total<=value)low=mid;else high=mid;}
+ while(high<1e9&&estimateEnergyCost(high,days,fixed,context?.configured?context:undefined).total<=value)high*=2;
+ for(let i=0;i<70;i++){const mid=(low+high)/2;if(estimateEnergyCost(mid,days,fixed,context?.configured?context:undefined).total<=value)low=mid;else high=mid;}
  return {kwh:low,ars:value,error:null};
 }
 export function calendarMonth(month:string, now=new Date()) {
@@ -29,9 +29,10 @@ export function calendarMonth(month:string, now=new Date()) {
 }
 export function argentinaMonth(now=new Date()){return new Date(+now-10800000).toISOString().slice(0,7);}
 export type StoredPoint = { recorded_at: string; total_energy_kwh?: unknown; power_w?: unknown; voltage?:unknown; current?:unknown };
-export function buildMonthlyProjection(input:{rows:StoredPoint[];month:string;now?:Date;choice:GoalChoice;fixed?:boolean;tariffValid?:boolean;intervalMinutes?:number;truncated?:boolean;tariffContext?:BillingContext}) {
- const now=input.now??new Date(), c=calendarMonth(input.month,now), valid=input.tariffValid!==false&&!(input.tariffContext?.configured&&!input.tariffContext.definition), fixed=input.fixed!==false;
- const resolved=input.choice?convertGoal(input.choice.mode,input.choice.value,fixed,valid,input.tariffContext):null;
+export function buildMonthlyProjection(input:{rows:StoredPoint[];month:string;now?:Date;choice:GoalChoice;fixed?:boolean;tariffValid?:boolean;intervalMinutes?:number;truncated?:boolean;tariffContext?:BillingContext;billingBounds?:ReturnType<typeof calendarMonth>}) {
+ const now=input.now??new Date(), c=input.billingBounds??calendarMonth(input.month,now), valid=input.tariffValid!==false&&!(input.tariffContext?.configured&&!input.tariffContext.definition), fixed=input.fixed!==false;
+ const estimateDays=input.billingBounds||input.tariffContext?.definition?.provider==='EDESUR'?c.days:30;
+ const resolved=input.choice?convertGoal(input.choice.mode,input.choice.value,fixed,valid,input.tariffContext,input.billingBounds?c.days:30):null;
  const target=resolved?.kwh??null;
  // Postgres numeric values may arrive as strings through an adapter. Reject
  // blanks/nulls rather than converting missing energy to zero.
@@ -46,6 +47,10 @@ export function buildMonthlyProjection(input:{rows:StoredPoint[];month:string;no
  let measured=0,resets=0,gaps=0,observedSeconds=0;
  const maxGap=Math.max(900,(input.intervalMinutes??15)*60*2.5);
  const used=first?rows.filter(r=>Date.parse(r.recorded_at)>=Date.parse(first.recorded_at)&&Date.parse(r.recorded_at)<=Date.parse(last?.recorded_at??first.recorded_at)):[];
+ // Preserve a measured fragment across a reset without adding energy across a
+ // counter discontinuity or a long sampling gap. Full-period projections stay unavailable.
+ let segmentStart=used[0];
+ let continuous:{from:string;to:string;kwh:number;span:number}|null=null;
  const points:{day:string;at:string;x:number;consumedKwh:number|null}[]=[];
  const completeDays=new Set<string>();
  const gapDays=new Set<string>();
@@ -55,6 +60,13 @@ export function buildMonthlyProjection(input:{rows:StoredPoint[];month:string;no
    if(d<0)resets++;else measured+=d;
    if(s>maxGap){gaps++;for(let gt=Date.parse(p.recorded_at);gt<=t;gt+=86400000)gapDays.add(new Date(gt-10800000).toISOString().slice(0,10));}
    else observedSeconds+=s;
+   if(d<0||s>maxGap)segmentStart=r;
+   else {
+    const segmentSpan=t-Date.parse(segmentStart.recorded_at);
+    if(segmentSpan>0&&segmentSpan>=(continuous?.span??0)){
+     continuous={from:segmentStart.recorded_at,to:r.recorded_at,kwh:Number(r.total_energy_kwh)-Number(segmentStart.total_energy_kwh),span:segmentSpan};
+    }
+   }
   }
   if(t>=+c.start){const day=new Date(t-10800000).toISOString().slice(0,10);const point={day,at:r.recorded_at,x:1+(t-+c.start)/86400000,consumedKwh:resets?null:measured};
    if(points.at(-1)?.day===day)points[points.length-1]=point;else points.push(point);}
@@ -80,7 +92,7 @@ export function buildMonthlyProjection(input:{rows:StoredPoint[];month:string;no
  if(resets)warnings.push('El contador retrocedió: no se publica un consumo mensual ni una proyección inconsistentes.');
  if(input.truncated)warnings.push('Historial limitado: no se publica proyección con una serie truncada.');
  if(span<1)warnings.push('Se necesita al menos un día observado para extrapolar el ritmo.');
- const goal:GoalProgress={status:target===null?'no_goal':projected===null?'no_data':projected<=target?'on_track':projected<=target*1.15?'at_risk':'over',goalKwh:target,goalCostArs:resolved?.ars??null,inputMode:input.choice?.mode??'kwh',allowedPerDayKwh:target===null?null:target/c.days,allowedPerWeekKwh:target===null?null:target/c.days*7,daysInMonth:c.days,elapsedDays:c.elapsed,measuredDays:span,coverage,consumedKwh:measuredKwh,dailyRateKwh:rate,expectedKwh:target===null?null:target/c.days*span,projectedMonthKwh:projected,projectedCostArs:projected!==null&&valid?estimateEnergyCost(projected,30,fixed,input.tariffContext?.configured?input.tariffContext:undefined).total:null,deviationKwh:difference,deviationPct:difference!==null&&target?difference/target*100:null,remainingPerDayKwh:remaining};
+ const goal:GoalProgress={status:target===null?'no_goal':projected===null?'no_data':projected<=target?'on_track':projected<=target*1.15?'at_risk':'over',goalKwh:target,goalCostArs:resolved?.ars??null,inputMode:input.choice?.mode??'kwh',allowedPerDayKwh:target===null?null:target/c.days,allowedPerWeekKwh:target===null?null:target/c.days*7,daysInMonth:c.days,elapsedDays:c.elapsed,measuredDays:span,coverage,consumedKwh:measuredKwh,dailyRateKwh:rate,expectedKwh:target===null?null:target/c.days*span,projectedMonthKwh:projected,projectedCostArs:projected!==null&&valid?estimateEnergyCost(projected,estimateDays,fixed,input.tariffContext?.configured?input.tariffContext:undefined).total:null,deviationKwh:difference,deviationPct:difference!==null&&target?difference/target*100:null,remainingPerDayKwh:remaining};
  const references=Array.from({length:c.days+1},(_,day)=>({x:day+1,pace:target===null?null:target*day/c.days,target}));
  const observed:{x:number;real:number|null}[]=points.map(p=>({x:p.x,real:p.consumedKwh}));
  if(first&&Date.parse(first.recorded_at)>=+c.start)observed.unshift({x:1+(Date.parse(first.recorded_at)-+c.start)/86400000,real:0});
@@ -89,9 +101,9 @@ export function buildMonthlyProjection(input:{rows:StoredPoint[];month:string;no
  const estimated=last&&projected!==null?[{x:1+(Date.parse(last.recorded_at)-+c.start)/86400000,projected:measured+(estimatedBefore??0)},{x:c.days+1,projected}]:[];
  const cost = valid ? {
   references:references.map(point=>({x:point.x,pace:goal.goalCostArs===null?null:goal.goalCostArs*(point.x-1)/c.days,target:goal.goalCostArs})),
-  observed:observed.map(point=>({x:point.x,real:point.real===null?null:estimateEnergyCost(point.real,30,fixed,input.tariffContext?.configured?input.tariffContext:undefined).total})),
-  estimated:estimated.map(point=>({x:point.x,projected:estimateEnergyCost(point.projected,30,fixed,input.tariffContext?.configured?input.tariffContext:undefined).total})),
+  observed:observed.map(point=>({x:point.x,real:point.real===null?null:estimateEnergyCost(point.real,estimateDays,fixed,input.tariffContext?.configured?input.tariffContext:undefined).total})),
+  estimated:estimated.map(point=>({x:point.x,projected:estimateEnergyCost(point.projected,estimateDays,fixed,input.tariffContext?.configured?input.tariffContext:undefined).total})),
  } : null;
- return {chart:{references,observed,estimated,cost},goal,choice:input.choice,tariff:tariffInfo(fixed,valid,input.tariffContext),month:c.month,daysInMonth:c.days,todayX:input.month===argentinaMonth(now)?1+c.elapsed:null,monthStart:c.start.toISOString(),monthEnd:c.end.toISOString(),latestStoredAt,measuredFrom:first?.recorded_at??null,measuredTo:last?.recorded_at??null,measuredKwh,estimatedToDateKwh:estimateNow,missingStart,exceededKwh:target!==null&&measuredKwh!==null?Math.max(0,measuredKwh-target):null,remainingDays,quality:{coverage,gaps,resets,stale,completeDays:completeDays.size,samples:inside.length,truncated:!!input.truncated},warnings,monthDaily:points,gapDays:[...gapDays],method:'Estimación basada en el ritmo observado: energía entre extremos / duración exacta observada; consumo observado + inicio no medido estimado + ritmo × tiempo restante.'};
+ return {chart:{references,observed,estimated,cost},goal,choice:input.choice,tariff:tariffInfo(fixed,valid,input.tariffContext),month:c.month,daysInMonth:c.days,todayX:input.month===argentinaMonth(now)?1+c.elapsed:null,monthStart:c.start.toISOString(),monthEnd:c.end.toISOString(),latestStoredAt,measuredFrom:first?.recorded_at??null,measuredTo:last?.recorded_at??null,measuredKwh,measuredFragment:resets&&continuous?{from:continuous.from,to:continuous.to,kwh:continuous.kwh}:null,estimatedToDateKwh:estimateNow,missingStart,exceededKwh:target!==null&&measuredKwh!==null?Math.max(0,measuredKwh-target):null,remainingDays,quality:{coverage,gaps,resets,stale,completeDays:completeDays.size,samples:inside.length,truncated:!!input.truncated},warnings,monthDaily:points,gapDays:[...gapDays],method:'Estimación basada en el ritmo observado: energía entre extremos / duración exacta observada; consumo observado + inicio no medido estimado + ritmo × tiempo restante.'};
 }
 export type MonthlyProjection = ReturnType<typeof buildMonthlyProjection>;

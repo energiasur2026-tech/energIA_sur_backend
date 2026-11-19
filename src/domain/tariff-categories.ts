@@ -1,3 +1,6 @@
+import {COOPRG,COOPRG_CATEGORIES,COOPRG_GUIDE,isRioGrande} from './rio-grande';
+import {EDESUR_CATEGORIES,EDESUR_PROVINCES} from './edesur';
+
 /** Verified classification, not a recommendation or an inference about a customer's contract. */
 export const CATEGORY_SOURCE='https://spse.ar/atencion-cliente#calcularConsumo';
 const groups=[{label:'Residencial',codes:['1','3','4','5'],pricingAvailable:true},{label:'Comercial',codes:['11','22','91'],pricingAvailable:false},{label:'General',codes:['31','41','51'],pricingAvailable:false}];
@@ -8,6 +11,23 @@ export function categoryAssistance(context:AssistanceContext,text=''){
  const input=text.trim(),q=normalize(input),supported=context.provider==='SPSE'&&context.province==='Santa Cruz';
  const guide='Te ayudo a encontrarla. ¿Tenés una factura de este suministro? Busquemos un campo como «Tarifa», «Categoría tarifaria» o «Tipo de usuario». La ubicación y el nombre pueden variar según el proveedor.';
  const common={context,inputText:input,source:supported?CATEGORY_SOURCE:null,reviewedOn:'2026-11-11',attachmentsAvailable:false,proposal:null as null|{code:string;label:string;inputText:string;pricingAvailable:boolean},message:guide,status:'guide'};
+ if(context.provider===COOPRG&&isRioGrande(context.province,context.locality)){
+  const message='En la factura de la Cooperativa buscá el apartado Suministro. Ahí figura tu categoría, por ejemplo TR1 - Uso Residencial. Copiá solo ese campo.';
+  const token=q.match(/^(?:tarifa[: ]+)?(tr[12]|t\s*1\s*-?\s*r[12]|t\s*1\s*-?\s*[ge]|t2p|tm1)(?:\s*[-–·]\s*[a-z ]+)?$/)?.[1];
+  const code=token?.replace(/[ -]/g,'').replace(/^t1r/,'tr').toUpperCase();
+  const category=COOPRG_CATEGORIES.find(c=>c.code===code);
+  const metadata={source:COOPRG_GUIDE,reviewedOn:'2026-11-18'};
+  if(!category)return {...common,...metadata,status:input?'unknown':'guide',message};
+  return {...common,...metadata,status:'recognized',message:'La categoría indicada es '+category.label+'.',proposal:{code:category.code,label:category.label,inputText:input,pricingAvailable:category.pricingAvailable}};
+ }
+ if(context.provider==='EDESUR'&&EDESUR_PROVINCES.includes(context.province)){
+  const message='En la sección de datos del suministro de Edesur, buscá «Tarifa», por ejemplo «T1 R Residencial 1 M». Copiá solo ese campo o su código (por ejemplo R1).';
+  const code=/^[rg][1-6]$/.test(q)?q.toUpperCase():q.match(/^(?:tarifa[: ]+)?t1\s+r\s+residencial\s+([1-6])(?:\s+m)?$/)?.[1];
+  const category=EDESUR_CATEGORIES.find(c=>c.code===(code?.length===1?'R'+code:code));
+  const metadata={source:EDESUR_CATEGORIES[0].source,reviewedOn:EDESUR_CATEGORIES[0].reviewedOn};
+  if(!category)return {...common,...metadata,status:input?'unknown':'guide',message};
+  return {...common,...metadata,status:'recognized',message:'Ese campo corresponde a '+category.label+'.',proposal:{code:category.code,label:category.label,inputText:input,pricingAvailable:true}};
+ }
  if(!input)return {...common,message:guide+(supported?' SPSE publica códigos residenciales, comerciales y generales; copiá el código tal como figura. La condición de subsidio se confirma por separado.':' Confirmá el proveedor de la factura; no puedo asignar una categoría solo por la ubicación.')};
  if(/recomend|conviene|cambiar.*categor|elegi.*por mi/.test(q))return {...common,status:'not_recommendation',message:'Debés registrar la categoría que corresponde a tu suministro y figura en la factura. No te recomiendo una categoría arbitraria. Para cambiarla hay que consultar los requisitos del proveedor; es un trámite distinto de configurar la actual.'};
  if(/donde|como.*(?:encuentro|ubico|localizo|busco)|no encuentro (?:el campo|la categor)/.test(q))return {...common,status:'guide',message:guide+' No tengo verificada una posición fija en la factura de este proveedor. Si no aparece, consultá su atención comercial.'};

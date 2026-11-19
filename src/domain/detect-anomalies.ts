@@ -7,7 +7,7 @@
  * lógica de *qué* es una anomalía vive en `anomaly-rules.ts`; acá solo está
  * el *orden* en que se persisten las cosas.
  */
-import { planAnomalies, type Episode } from './anomaly-rules';
+import { mergeAggregates, planAnomalies, type Episode } from './anomaly-rules';
 import type { AnomalyDeps, EventsPort } from './ports';
 import type { MeterThresholds } from './threshold-types';
 
@@ -16,6 +16,7 @@ export type MeterForDetection = {
   deviceId: string;
   thresholds: MeterThresholds;
   anomaliesEvaluatedAt: string | null;
+  collectionIntervalMinutes?: number;
 };
 
 export type DetectionResult = {
@@ -47,6 +48,7 @@ export async function detectAnomaliesWith(
     thresholds: meter.thresholds,
     openEvents: await deps.events.openByType(meter.deviceId),
     evaluatedAt: meter.anomaliesEvaluatedAt,
+    collectionIntervalMinutes: meter.collectionIntervalMinutes,
   });
 
   for (const episodio of plan.episodes) {
@@ -94,6 +96,8 @@ async function aplicarEpisodio(
 ): Promise<{ abierto: boolean }> {
   let id = episodio.existingId;
   let abierto = false;
+  let aggregates = episodio.aggregates;
+  let lastViolationAt = episodio.lastViolationAt;
 
   if (id === null) {
     const inicial = episodio.opening ?? {
@@ -109,13 +113,31 @@ async function aplicarEpisodio(
       ...inicial.aggregates,
     });
     id = creado.id;
-    abierto = true;
+    const reusedExisting =
+      typeof creado.startedAt === 'string' &&
+      Date.parse(creado.startedAt) !== Date.parse(episodio.startedAt);
+    abierto = !reusedExisting;
+    if (reusedExisting) {
+      aggregates = mergeAggregates(
+        {
+          samples: creado.samples ?? 0,
+          minVoltage: creado.minVoltage ?? null,
+          maxVoltage: creado.maxVoltage ?? null,
+          maxCurrent: creado.maxCurrent ?? null,
+          maxPowerW: creado.maxPowerW ?? null,
+        },
+        episodio.aggregates
+      );
+      if (creado.lastViolationAt && Date.parse(creado.lastViolationAt) > Date.parse(lastViolationAt)) {
+        lastViolationAt = creado.lastViolationAt;
+      }
+    }
   }
 
   await events.update(id, {
-    lastViolationAt: episodio.lastViolationAt,
+    lastViolationAt,
     severity: episodio.severity,
-    ...episodio.aggregates,
+    ...aggregates,
   });
 
   if (episodio.endedAt) {

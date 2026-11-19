@@ -313,6 +313,7 @@ export async function linkMeter(params: {
   ownerId: string;
   name: string;
   phases: MeterPhases;
+  placement?: MeterPlacement;
 }): Promise<Meter> {
   const inicial = initialMeterSettings();
 
@@ -323,6 +324,7 @@ export async function linkMeter(params: {
       owner_id: params.ownerId,
       name: params.name,
       phases: params.phases,
+      ...(params.placement?{role:params.placement.role,area_label:params.placement.areaLabel}:{}),
       collection_interval_minutes: inicial.collectionIntervalMinutes,
       gap_minutes: inicial.gapMinutes,
       overcurrent_a: inicial.overcurrentA,

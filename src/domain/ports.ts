@@ -40,7 +40,16 @@ export interface EventsPort {
   /** Eventos activos (sin cerrar) del medidor, indexados por tipo. */
   openByType(deviceId: string): Promise<Map<EventType, OpenEventSnapshot>>;
   /** Abre un evento, o devuelve el que ya existía para ese tipo y medidor. */
-  openOrGet(event: EventToCreate): Promise<{ id: number }>;
+  openOrGet(event: EventToCreate): Promise<{
+    id: number;
+    startedAt?: string;
+    lastViolationAt?: string;
+    samples?: number;
+    minVoltage?: number | null;
+    maxVoltage?: number | null;
+    maxCurrent?: number | null;
+    maxPowerW?: number | null;
+  }>;
   /** Inserta un evento ya cerrado (los huecos de datos). */
   insertClosed(event: EventToCreate): Promise<void>;
   update(id: number, update: EventUpdate): Promise<void>;

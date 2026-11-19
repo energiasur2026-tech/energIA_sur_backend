@@ -142,8 +142,10 @@ export function planAnomalies(input: {
   openEvents: Map<EventType, OpenEventSnapshot>;
   /** Último instante ya evaluado. `null` = el medidor no tiene historia previa. */
   evaluatedAt: string | null;
+  /** Intervalo configurado de recolección; evita falsos huecos cuando supera `gapMinutes`. */
+  collectionIntervalMinutes?: number;
 }): AnomalyPlan {
-  const { readings, thresholds, openEvents, evaluatedAt } = input;
+  const { readings, thresholds, openEvents, evaluatedAt, collectionIntervalMinutes } = input;
 
   if (readings.length === 0) {
     return { episodes: [], gaps: [], watermark: null, readingsEvaluated: 0 };
@@ -155,7 +157,7 @@ export function planAnomalies(input: {
 
   return {
     episodes,
-    gaps: planGaps(readings, thresholds, evaluatedAt),
+    gaps: planGaps(readings, thresholds, evaluatedAt, collectionIntervalMinutes),
     watermark: readings[readings.length - 1].recordedAt,
     readingsEvaluated: readings.length,
   };
@@ -201,7 +203,7 @@ function planRule(
     // Una lectura anterior al inicio del episodio ya está contemplada por él.
     // Puede aparecer si se reprocesa historia (marca de agua reiniciada): sin
     // este filtro, el evento retrocedería su fin hasta antes de su comienzo.
-    if (actual && reading.recordedAt < actual.startedAt) continue;
+    if (actual && Date.parse(reading.recordedAt) < Date.parse(actual.startedAt)) continue;
 
     if (rule.violates(value, t)) {
       if (actual) {
@@ -259,9 +261,14 @@ function terminar(
 function planGaps(
   readings: RawReading[],
   t: MeterThresholds,
-  evaluatedAt: string | null
+  evaluatedAt: string | null,
+  collectionIntervalMinutes?: number
 ): Gap[] {
-  const gapMs = t.gapMinutes * 60_000;
+  const effectiveGapMinutes = Math.max(
+    t.gapMinutes,
+    collectionIntervalMinutes ? Math.ceil(collectionIntervalMinutes * 1.5) : 0
+  );
+  const gapMs = effectiveGapMinutes * 60_000;
   const gaps: Gap[] = [];
   let previous = evaluatedAt;
 
@@ -280,6 +287,17 @@ function planGaps(
   }
 
   return gaps;
+}
+
+/** Combina agregados de un evento abierto concurrentemente sin perder extremos. */
+export function mergeAggregates(a: Aggregates, b: Aggregates): Aggregates {
+  return {
+    samples: Math.max(a.samples, b.samples),
+    minVoltage: min(a.minVoltage, b.minVoltage),
+    maxVoltage: max(a.maxVoltage, b.maxVoltage),
+    maxCurrent: max(a.maxCurrent, b.maxCurrent),
+    maxPowerW: max(a.maxPowerW, b.maxPowerW),
+  };
 }
 
 /** El más tardío de dos instantes ISO. */

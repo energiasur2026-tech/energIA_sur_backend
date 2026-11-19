@@ -2,7 +2,8 @@ import test,{mock} from 'node:test';
 import assert from 'node:assert/strict';
 import {resolveTariff} from '../src/domain/electricity-billing.ts';
 let activeTariff=resolveTariff('SPSE','AR-Santa Cruz','unsubsidized','2026-10-01')!;
-mock.module('../src/lib/tariff-profile.ts',{namedExports:{billingContext:async()=>({configured:true,definition:activeTariff,from:'2026-10-01',to:'2026-10-31'})}});
+let tariffAvailable=true;
+mock.module('../src/lib/tariff-profile.ts',{namedExports:{billingContext:async()=>({configured:true,definition:tariffAvailable?activeTariff:null,from:'2026-10-01',to:'2026-10-31'})}});
 let user='A';let reads=0;let storageFailure:{code:string;message?:string}|null=null;const data=new Map<string,Record<string,unknown>>();
 const meters=[{deviceId:'a',ownerId:'A',goalKwh:266,goalInputMode:'kwh',role:'central'},{deviceId:'b',ownerId:'B',goalKwh:999,goalInputMode:'kwh',role:'central'}];
 mock.module('../src/lib/auth.ts',{namedExports:{getCurrentUser:async()=>({id:user})}});
@@ -42,4 +43,19 @@ test('missing goal schema and connection failures preserve the saved goal with a
   assert.equal(data.get('A:a')!.input_value,266);
  } finally {storageFailure=null;}
  assert.equal((await PUT(req('a',{mode:'ars',value:50000}))).status,200);
+});
+
+test('an explicit ARS target can be saved without a tariff or a billing close',async()=>{
+ user='A';
+ tariffAvailable=false;
+ try {
+  const response=await PUT(new Request(req('a',{mode:'ars',value:50000}).url+'&period=billing',{
+   method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({mode:'ars',value:50000}),
+  }));
+  assert.equal(response.status,200);
+  const saved=await response.json();
+  assert.equal(saved.goalCostArs,50000);
+  assert.equal(saved.goalKwh,null);
+  assert.equal(saved.choice.mode,'ars');
+ } finally {tariffAvailable=true;}
 });

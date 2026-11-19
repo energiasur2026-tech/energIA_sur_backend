@@ -42,16 +42,18 @@ export async function POST(request: Request) {
       pending.map((meter) => readAndStoreMeter(meter, 'scheduled'))
     );
 
-    // La detección corre después de guardar, sobre la serie persistida — no
-    // sobre la muestra recién tomada. Así también evalúa las lecturas que
-    // escribió el sondeo del dashboard entre dos ciclos del recolector.
-    const detections = await Promise.allSettled(pending.map((meter) => detectAnomalies(meter)));
+    // La detección corre después de guardar, sobre la serie persistida de TODOS
+    // los medidores — así también evalúa oportunamente lecturas guardadas por el
+    // dashboard aunque el intervalo programado todavía no haya vencido.
+    const allDetections = await Promise.allSettled(meters.map((meter) => detectAnomalies(meter)));
+    const detectionById = new Map(meters.map((meter, i) => [meter.deviceId, allDetections[i]]));
+    const detections = pending.map((meter) => detectionById.get(meter.deviceId)!);
 
     // El aviso va después de detectar, sobre lo que quedó registrado. Si falla
     // el envío, el evento queda sin marcar y se reintenta en el próximo ciclo.
-    const notifications = await Promise.allSettled(
-      pending.map((meter) => notifyNewAnomalies(meter))
-    );
+    const allNotifications = await Promise.allSettled(meters.map((meter) => notifyNewAnomalies(meter)));
+    const notificationById = new Map(meters.map((meter, i) => [meter.deviceId, allNotifications[i]]));
+    const notifications = pending.map((meter) => notificationById.get(meter.deviceId)!);
 
     const collected = results.map((result, i) => {
       const detection = detections[i];

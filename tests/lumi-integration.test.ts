@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createServer } from 'node:net';
 
-mock.module('../src/lib/personal-goals.ts',{namedExports:{withPersonalGoal:async (_user: string, meter:unknown)=>meter}});
+mock.module('../src/lib/personal-goals.ts',{namedExports:{withPersonalGoal:async (_user: string, meter:unknown)=>meter,personalGoal:async()=>null}});
 
 let identity: string | null = 'A';
 mock.module('../src/lib/tariff-profile.ts',{namedExports:{lumiSupply:async(user:string,id:string)=>({country:'AR',province:'Santa Cruz',locality:id==='meter-a'?'Río Gallegos':'',distributor:id==='meter-a'?'SPSE':'unknown',category:'1',tariffNote:'Cargos de referencia, no total final.',tariffStatus:'reference_only',source:'supply_settings'}),billingContext:async(_u:string,_m:string,from:string,to=from)=>({configured:true,definition:TARIFFS[0],from,to,code:'reference_only'})}});

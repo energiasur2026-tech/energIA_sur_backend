@@ -21,6 +21,7 @@ export async function lumiService(payload: Record<string, unknown>) {
   } catch { throw new LumiError('SERVICE_UNAVAILABLE', 'Lumi no está disponible temporalmente. Intentá nuevamente.'); }
   if (response.status === 401) throw new LumiError('CONFIGURATION_ERROR', 'La autenticación entre los servicios de Lumi requiere revisión.');
   if (response.status === 404) throw new LumiError('RESOURCE_UNAVAILABLE', 'El recurso de Lumi solicitado no está disponible.', 404);
+  if (response.status === 409) throw new LumiError('DIALOGUE_CHANGED', 'La conversación cambió. Volvé a enviar tu mensaje.', 409);
   if (response.status === 400) throw new LumiError('INVALID_REQUEST', 'Lumi no pudo interpretar la solicitud.', 400);
   if (!response.ok) throw new LumiError('SERVICE_UNAVAILABLE', 'Lumi no está disponible temporalmente.');
   let data;

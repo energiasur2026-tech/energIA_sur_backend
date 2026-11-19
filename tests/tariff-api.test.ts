@@ -8,6 +8,25 @@ mock.module('../src/lib/supabase.ts',{namedExports:{supabase:()=>({from:()=>{con
 mock.module('../src/lib/readings.ts',{namedExports:{getLumiReadings:async(id:string,from:Date,to:Date)=>{queried.push(id);return {readings:[{recorded_at:from.toISOString(),total_energy_kwh:819},{recorded_at:new Date(+to-1).toISOString(),total_energy_kwh:1033}],truncated:false};}}});
 const tariff=await import('../src/app/api/meter/tariff/route.ts');const compare=await import('../src/app/api/meter/bill-comparison/route.ts');
 const req=(path:string,id:string,body?:object,method='POST')=>new Request('http://localhost/api/meter/'+path+'?deviceId='+id,{method:body?method:'GET',headers:{origin:'http://localhost','content-type':'application/json'},body:body?JSON.stringify(body):undefined});
+test('a confirmed pending provider stores only supply metadata',async()=>{
+ const supply={provider:'other',providerName:'Cooperativa del Valle',jurisdiction:'AR-Santa Cruz',province:'Santa Cruz',
+  locality:'Río Gallegos',category:'unknown',segment:'',bonus:'',providerConfirmed:true};
+ assert.equal((await tariff.PUT(req('tariff','a',supply,'PUT'))).status,200);
+ assert.equal((await (await tariff.GET(req('tariff','a'))).json()).profile.providerName,'Cooperativa del Valle');
+ assert.equal((await tariff.PUT(req('tariff','a',{...supply,rawInvoice:'Contenido original'},'PUT'))).status,400);
+});
+test('Río Grande declarations save and reload only for the authorized supply',async()=>{
+ const profile={provider:'COOPRG',jurisdiction:'AR-Tierra del Fuego',province:'Tierra del Fuego',locality:'Río Grande',
+  category:'TR1',segment:'unsubsidized',bonus:'',providerConfirmed:true,supplyType:'single-phase',constructionCharge:'yes'};
+ assert.equal((await tariff.PUT(req('tariff','a',profile,'PUT'))).status,200);
+ const read=await (await tariff.GET(req('tariff','a'))).json();
+ assert.deepEqual(read.profile,{...profile,categoryText:''});
+ user='B';
+ try {
+  assert.equal((await tariff.GET(req('tariff','a'))).status,403);
+  assert.equal((await (await tariff.GET(req('tariff','b'))).json()).profile,null);
+ } finally {user='A';}
+});
 test('tariff selection and bill comparison remain user/meter scoped; amounts never force a match',async()=>{
  const profile={provider:'SPSE',jurisdiction:'AR-Santa Cruz',province:'Santa Cruz',locality:'Río Gallegos',category:'1',segment:'subsidized',bonus:'none',providerConfirmed:true};
  assert.equal((await tariff.PUT(req('tariff','a',profile,'PUT'))).status,200);

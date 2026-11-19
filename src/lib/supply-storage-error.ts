@@ -5,7 +5,7 @@ export class SupplyStorageError extends Error {
 
 export function supplyStorageError(error: { code?: string; message?: string }): SupplyStorageError {
   if (['42P01', '42703', 'PGRST204', 'PGRST205'].includes(error.code ?? '')) {
-    return new SupplyStorageError('SUPPLY_SCHEMA_MISSING', 'La base de datos no tiene completa la configuración de suministros. Aplicá las migraciones 0021–0023 o el SQL de reparación de suministros. Tus cambios siguen en el formulario.');
+    return new SupplyStorageError('SUPPLY_SCHEMA_MISSING', 'La base de datos no tiene completa la configuración de suministros. Aplicá las migraciones 0021–0026 o el SQL de reparación de suministros. Tus cambios siguen en el formulario.');
   }
   if (error.code === '23514') {
     return new SupplyStorageError('SUPPLY_SCHEMA_CONSTRAINT', 'La base de datos rechazó esta configuración por una restricción. Revisá las migraciones de suministros y los valores enviados. Tus cambios siguen en el formulario.', 409);

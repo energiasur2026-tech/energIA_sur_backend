@@ -71,6 +71,20 @@ function isUniqueViolation(error: unknown): boolean {
 }
 
 export async function insertEvent(event: NewEvent): Promise<EventRecord> {
+  if (event.type === 'DATA_GAP' && event.endedAt) {
+    const { data: existing, error: lookupError } = await supabase()
+      .from('events')
+      .select('*')
+      .eq('device_id', event.deviceId)
+      .eq('type', 'DATA_GAP')
+      .eq('started_at', event.startedAt)
+      .eq('ended_at', event.endedAt)
+      .limit(1);
+    if (!lookupError && existing && existing.length > 0) {
+      return mapEvent(existing[0]);
+    }
+  }
+
   const { data, error } = await supabase()
     .from('events')
     .insert({
@@ -125,17 +139,97 @@ export async function closeEvent(id: number, endedAt: string) {
   if (error) throw new Error(`No se pudo cerrar el evento: ${error.message}`);
 }
 
-/** Cuántas anomalías siguen abiertas en un medidor. */
-export async function countActiveEvents(deviceId: string): Promise<number> {
-  const { count, error } = await supabase()
+/** Cuántas anomalías siguen abiertas en un medidor (opcionalmente solo de tensión). */
+export async function countActiveEvents(deviceId: string, voltageOnly = false): Promise<number> {
+  const query = supabase()
     .from('events')
     .select('id', { count: 'exact', head: true })
     .eq('device_id', deviceId)
     .is('ended_at', null);
 
+  const { count, error } = await (voltageOnly
+    ? query.in('type', ['LOW_VOLTAGE', 'HIGH_VOLTAGE'])
+    : query);
+
   if (error) throw new Error(`No se pudieron contar los eventos activos: ${error.message}`);
 
   return count ?? 0;
+}
+
+/** Episodios iniciados en `[from, to)`. Los de arrastre se informan en el contador de activos. */
+export async function countPeriodEvents(
+  deviceId: string,
+  from: string,
+  to: string,
+  voltageOnly = false
+): Promise<number> {
+  const query = supabase()
+    .from('events')
+    .select('id', { count: 'exact', head: true })
+    .eq('device_id', deviceId)
+    .gte('started_at', from)
+    .lt('started_at', to);
+  const { count, error } = await (voltageOnly
+    ? query.in('type', ['LOW_VOLTAGE', 'HIGH_VOLTAGE'])
+    : query);
+  if (error) throw new Error('No se pudieron contar los episodios del período.');
+  return count ?? 0;
+}
+
+/** Episodios cerrados con inicio anterior a `before` (o todos los cerrados si `before` es null). */
+export async function countHistoricalEvents(
+  deviceId: string,
+  before: string | null,
+  voltageOnly = false
+): Promise<number> {
+  let query = supabase()
+    .from('events')
+    .select('id', { count: 'exact', head: true })
+    .eq('device_id', deviceId)
+    .not('ended_at', 'is', null);
+  if (before) query = query.lt('started_at', before);
+  const { count, error } = await (voltageOnly
+    ? query.in('type', ['LOW_VOLTAGE', 'HIGH_VOLTAGE'])
+    : query);
+  if (error) throw new Error('No se pudieron contar los eventos históricos.');
+  return count ?? 0;
+}
+
+/** Lista de episodios persistidos iniciados en `[from, to)` ordenados del más reciente al más antiguo. */
+export async function listPeriodEvents(
+  deviceId: string,
+  from: string,
+  to: string,
+  voltageOnly = false
+): Promise<EventRecord[]> {
+  const query = supabase()
+    .from('events')
+    .select('*')
+    .eq('device_id', deviceId)
+    .gte('started_at', from)
+    .lt('started_at', to)
+    .order('started_at', { ascending: false })
+    .limit(500);
+  const { data, error } = await (voltageOnly
+    ? query.in('type', ['LOW_VOLTAGE', 'HIGH_VOLTAGE'])
+    : query);
+  if (error) throw new Error(`No se pudieron leer los eventos del período: ${error.message}`);
+  return (data ?? []).map(mapEvent);
+}
+
+/** Último episodio persistido (opcionalmente restringido a tensión). */
+export async function latestEvent(deviceId: string, voltageOnly = false): Promise<EventRecord | null> {
+  const query = supabase()
+    .from('events')
+    .select('*')
+    .eq('device_id', deviceId)
+    .order('started_at', { ascending: false })
+    .limit(1);
+  const { data, error } = await (voltageOnly
+    ? query.in('type', ['LOW_VOLTAGE', 'HIGH_VOLTAGE'])
+    : query);
+  if (error) throw new Error(`No se pudo leer el último evento: ${error.message}`);
+  return data && data.length > 0 ? mapEvent(data[0]) : null;
 }
 
 /** Eventos que todavía no se avisaron por email. */
