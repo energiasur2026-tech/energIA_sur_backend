@@ -527,13 +527,36 @@ límite— sin histéresis un mismo episodio se fragmentaría en decenas de even
 de un par de segundos. Es el mismo criterio con el que trabajan los relés de
 protección.
 
-Un evento se cierra en el instante de su **última lectura en falta**, no cuando
-se detecta: así la duración refleja cuánto duró la anomalía real.
+El detector cierra el episodio cuando observa recuperación. El fin guardado
+corresponde a la última lectura en falta. El intervalo entre muestras describe
+lo observado. Una sola muestra se muestra como «Detectado en una lectura».
+
+Cada episodio nuevo conserva el umbral vigente al abrirse. Si el usuario
+cambia Ajustes, el detector aplica los nuevos límites al abrir otros episodios.
+Los históricos sin umbral registrado conservan el campo vacío. Para «Sin
+lecturas» se usa el mayor valor entre el umbral configurado y 1,5 veces el
+intervalo de recolección, redondeado hacia arriba.
 
 **Reentrancia.** Cada medidor guarda hasta qué instante ya se evaluaron sus
 lecturas (`meters.anomalies_evaluated_at`). Correr la detección dos veces no
 reprocesa historia ni duplica eventos; un índice único parcial garantiza además,
-a nivel de base, un solo evento abierto por tipo y medidor.
+a nivel de base, un solo evento abierto por tipo y medidor. La migración
+`0027_event_detection_threshold.sql` protege también la identidad de los
+episodios nuevos por medidor, tipo e instante de inicio. Aplicala antes de
+desplegar el detector actualizado.
+
+**Rangos.** Monitor, Eventos y Lumi consultan los episodios persistidos por
+medidor. Cada episodio pertenece al rango donde empezó. Se incluye el límite
+inferior y se excluye el superior. Si empezó antes y terminó dentro del rango,
+pertenece al rango anterior. Si empezó dentro y termina después, se cuenta en
+el rango donde empezó y se muestra su estado registrado al consultar. Las
+consultas de estado actual de Lumi abarcan todos los episodios abiertos.
+
+El período actual empieza el primer día del mes a medianoche de Argentina.
+«Ver historial» conserva el inicio y el corte exacto del resumen de Monitor.
+Los últimos 7 o 30 días incluyen el día local en curso. En un rango
+personalizado, «Hasta» incluye todo el día indicado. El gasto de Monitor sigue
+usando el ciclo de facturación configurado.
 
 **Sobre "Sin lecturas".** Un hueco en la serie puede deberse a un corte de
 suministro, a que el medidor perdió conexión, o a una interrupción del

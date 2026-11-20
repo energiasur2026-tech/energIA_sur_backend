@@ -4,6 +4,8 @@ export type EventType = 'LOW_VOLTAGE' | 'HIGH_VOLTAGE' | 'OVERCURRENT' | 'DATA_G
 export type EventSeverity = 'INFO' | 'WARNING' | 'CRITICAL';
 
 export type EventRecord = {
+  /** Umbral aplicado al abrir el episodio (V, A o minutos según el tipo). */
+  detectionThreshold?: number | null;
   id: number;
   type: EventType;
   severity: EventSeverity;

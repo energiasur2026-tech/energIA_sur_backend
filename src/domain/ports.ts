@@ -16,6 +16,8 @@ import type { RawReading } from './reading-types';
 
 /** Un evento a persistir por primera vez. */
 export type EventToCreate = {
+  /** Umbral aplicado al abrir el episodio (V, A o minutos según el tipo). */
+  detectionThreshold?: number | null;
   deviceId: string;
   type: EventType;
   severity: EventSeverity;
@@ -42,6 +44,7 @@ export interface EventsPort {
   /** Abre un evento, o devuelve el que ya existía para ese tipo y medidor. */
   openOrGet(event: EventToCreate): Promise<{
     id: number;
+    endedAt?: string | null;
     startedAt?: string;
     lastViolationAt?: string;
     samples?: number;

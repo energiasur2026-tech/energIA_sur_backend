@@ -282,3 +282,25 @@ test('un pico puntual de potencia sin sobrecorriente ni tensión fuera de rango 
   const p = plan([lec(0, 220, 1, 200), lec(5, 220, 10, 2200), lec(10, 220, 1, 200)]);
   assert.equal(p.episodes.length, 0);
 });
+
+test('an open episode keeps its threshold and a new episode uses the updated setting', () => {
+  const readings = [lec(0, 200), lec(5, 200), lec(10, 220), lec(15, 195)];
+  const previous = plan([readings[0]]).episodes[0];
+  const result = planAnomalies({
+    readings,
+    thresholds: { ...UMBRALES, lowVoltageV: 198 },
+    evaluatedAt: null,
+    openEvents: new Map([['LOW_VOLTAGE', {
+      id: 123,
+      startedAt: previous.startedAt,
+      lastViolationAt: previous.lastViolationAt,
+      detectionThreshold: previous.detectionThreshold,
+      ...previous.aggregates,
+    }]]),
+  });
+  assert.equal(result.episodes[0].aggregates.samples, 2);
+  assert.equal(result.episodes[0].detectionThreshold, UMBRALES.lowVoltageV);
+  assert.equal(result.episodes[0].endedAt, readings[1].recordedAt);
+  assert.equal(result.episodes[1].detectionThreshold, 198);
+  assert.equal(result.episodes[1].endedAt, null);
+});

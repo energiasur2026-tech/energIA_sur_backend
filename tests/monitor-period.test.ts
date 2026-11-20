@@ -2,6 +2,7 @@ import {mock,test} from 'node:test';
 import assert from 'node:assert/strict';
 import {TARIFFS} from '../src/domain/electricity-billing.ts';
 import type {EventRecord} from '../src/domain/event-types.ts';
+import {eventBounds} from '../src/domain/event-period.ts';
 import type {Meter} from '../src/lib/meters.ts';
 
 const now=new Date('2026-11-18T03:00:00Z');
@@ -51,16 +52,12 @@ mock.module('../src/lib/events.ts',{namedExports:{
     filters.push([id,'active',String(voltageOnly)]);
     return (mockEventsByDevice[id]??[]).filter(e=>e.endedAt===null&&matchesVoltage(e,voltageOnly)).length;
   },
-  countPeriodEvents:async(id:string,from:string,to:string,voltageOnly=false)=>{
-    filters.push([id,from,to,String(voltageOnly)]);
-    const f=Date.parse(from), t=Date.parse(to);
-    return (mockEventsByDevice[id]??[]).filter(e=>matchesVoltage(e,voltageOnly)&&Date.parse(e.startedAt)<t&&Date.parse(e.startedAt)>=f).length;
-  },
   countHistoricalEvents:async(id:string,before:string|null,voltageOnly=false)=>{
     const b=before?Date.parse(before):null;
     return (mockEventsByDevice[id]??[]).filter(e=>matchesVoltage(e,voltageOnly)&&e.endedAt!==null&&(b===null||Date.parse(e.startedAt)<b)).length;
   },
   listPeriodEvents:async(id:string,from:string,to:string,voltageOnly=false)=>{
+    filters.push([id,from,to,String(voltageOnly)]);
     const f=Date.parse(from), t=Date.parse(to);
     return (mockEventsByDevice[id]??[]).filter(e=>matchesVoltage(e,voltageOnly)&&Date.parse(e.startedAt)<t&&Date.parse(e.startedAt)>=f)
       .sort((a,b)=>Date.parse(b.startedAt)-Date.parse(a.startedAt));
@@ -162,6 +159,7 @@ test('crossing episodes stay active without increasing the new period count',asy
   const from='2026-11-18T00:00:00Z';
   const summary=await periodAnomalies('meter-b',from,now,false,null,true,false);
   assert.equal(summary.count,0);
+  assert.equal(summary.activeInPeriod,0);
   assert.equal(summary.active,1);
   assert.equal(summary.resolved,0);
   assert.equal(summary.provisional,true);
@@ -189,4 +187,19 @@ test('a reset returns only a measured continuous fragment and no extrapolation',
   } finally {
     customReadings=null;
   }
+});
+
+test('calendar, rolling presets, pinned Monitor and inclusive local dates agree', () => {
+  const beforeLocalMonthChange = new Date('2026-12-01T02:59:59.999Z');
+  const current = eventBounds('current', beforeLocalMonthChange);
+  assert.equal(current.from, '2026-11-01T03:00:00.000Z');
+  assert.equal(eventBounds('current', new Date('2026-12-01T03:00:00Z')).from, '2026-12-01T03:00:00.000Z');
+  assert.deepEqual(eventBounds('current', new Date('2026-12-01T04:00:00Z'), current.from, current.to), current);
+  assert.equal(eventBounds('7d', now).from, '2026-11-12T03:00:00.000Z');
+  assert.equal(eventBounds('30d', now).from, '2026-10-20T03:00:00.000Z');
+  const singleDay = eventBounds('custom', now, '2026-11-17', '2026-11-17');
+  assert.equal(singleDay.from, '2026-11-17T03:00:00.000Z');
+  assert.equal(singleDay.to, '2026-11-18T03:00:00.000Z');
+  assert.throws(() => eventBounds('custom', now, '2026-11-18', '2026-11-17'), RangeError);
+  assert.throws(() => eventBounds('custom', now, '2026-11-31'), RangeError);
 });

@@ -43,6 +43,7 @@ export type Aggregates = {
 
 /** Lo mínimo que hace falta saber de un evento ya abierto para continuarlo. */
 export type OpenEventSnapshot = {
+  detectionThreshold?: number | null;
   id: number;
   startedAt: string;
   lastViolationAt: string;
@@ -57,6 +58,7 @@ export type OpenEventSnapshot = {
  */
 export type Episode = {
   type: Exclude<EventType, 'DATA_GAP'>;
+  detectionThreshold: number;
   existingId: number | null;
   startedAt: string;
   lastViolationAt: string;
@@ -91,6 +93,7 @@ export type AnomalyPlan = {
 };
 
 type Rule = {
+  thresholdKey: keyof MeterThresholds;
   type: Exclude<EventType, 'DATA_GAP'>;
   /** Valor evaluado de una lectura, o `null` si esa lectura no lo trae. */
   value: (reading: RawReading) => number | null;
@@ -102,6 +105,7 @@ type Rule = {
 const RULES: Rule[] = [
   {
     type: 'LOW_VOLTAGE',
+    thresholdKey: 'lowVoltageV',
     value: (r) => r.voltage,
     violates: (v, t) => v < t.lowVoltageV,
     recovered: (v, t) => v >= t.lowVoltageV + VOLTAGE_HYSTERESIS_V,
@@ -112,6 +116,7 @@ const RULES: Rule[] = [
   },
   {
     type: 'HIGH_VOLTAGE',
+    thresholdKey: 'highVoltageV',
     value: (r) => r.voltage,
     violates: (v, t) => v > t.highVoltageV,
     recovered: (v, t) => v <= t.highVoltageV - VOLTAGE_HYSTERESIS_V,
@@ -122,6 +127,7 @@ const RULES: Rule[] = [
   },
   {
     type: 'OVERCURRENT',
+    thresholdKey: 'overcurrentA',
     value: (r) => r.current,
     violates: (a, t) => a > t.overcurrentA,
     recovered: (a, t) => a <= t.overcurrentA - CURRENT_HYSTERESIS_A,
@@ -175,10 +181,13 @@ type Episodio = {
 function planRule(
   rule: Rule,
   readings: RawReading[],
-  t: MeterThresholds,
+  configured: MeterThresholds,
   existing: OpenEventSnapshot | null
 ): Episode[] {
   const cerrados: Episode[] = [];
+  let t = existing?.detectionThreshold == null
+    ? configured
+    : { ...configured, [rule.thresholdKey]: existing.detectionThreshold };
 
   let actual: Episodio | null = existing
     ? {
@@ -200,10 +209,8 @@ function planRule(
     const value = rule.value(reading);
     if (value === null) continue;
 
-    // Una lectura anterior al inicio del episodio ya está contemplada por él.
-    // Puede aparecer si se reprocesa historia (marca de agua reiniciada): sin
-    // este filtro, el evento retrocedería su fin hasta antes de su comienzo.
-    if (actual && Date.parse(reading.recordedAt) < Date.parse(actual.startedAt)) continue;
+    // Las lecturas ya incorporadas no se vuelven a sumar al reintentar.
+    if (actual && Date.parse(reading.recordedAt) <= Date.parse(actual.lastViolationAt)) continue;
 
     if (rule.violates(value, t)) {
       if (actual) {
@@ -227,6 +234,7 @@ function planRule(
     if (actual && rule.recovered(value, t)) {
       cerrados.push(terminar(rule, actual, t, maxInstant(actual.startedAt, actual.lastViolationAt)));
       actual = null;
+      t = configured;
     }
   }
 
@@ -244,6 +252,7 @@ function terminar(
 ): Episode {
   return {
     type: rule.type,
+    detectionThreshold: t[rule.thresholdKey],
     existingId: e.existingId,
     startedAt: e.startedAt,
     lastViolationAt: e.lastViolationAt,
@@ -258,17 +267,17 @@ function terminar(
  * Huecos en la serie: intervalos sin ninguna lectura más largos que el umbral
  * del medidor.
  */
+export function effectiveGapMinutes(t: MeterThresholds, interval?: number): number {
+  return Math.max(t.gapMinutes, interval ? Math.ceil(interval * 1.5) : 0);
+}
+
 function planGaps(
   readings: RawReading[],
   t: MeterThresholds,
   evaluatedAt: string | null,
   collectionIntervalMinutes?: number
 ): Gap[] {
-  const effectiveGapMinutes = Math.max(
-    t.gapMinutes,
-    collectionIntervalMinutes ? Math.ceil(collectionIntervalMinutes * 1.5) : 0
-  );
-  const gapMs = effectiveGapMinutes * 60_000;
+  const gapMs = effectiveGapMinutes(t, collectionIntervalMinutes) * 60_000;
   const gaps: Gap[] = [];
   let previous = evaluatedAt;
 

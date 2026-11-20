@@ -3,7 +3,9 @@ import {argentinaMonth,buildMonthlyProjection,calendarMonth} from '@/domain/mont
 import {calculateElectricity,cents} from '@/domain/electricity-billing';
 import {billingRange,estimatedBillingCycle} from '@/domain/billing-cycle';
 import {getBillingClose} from '@/lib/billing-cycle';
-import {billingSpend,detectorIsCurrent,monitorBounds,periodAnomalies} from '@/lib/monitor-period';
+import {billingSpend,detectorIsCurrent,periodAnomalies} from '@/lib/monitor-period';
+import {eventBounds} from '@/domain/event-period';
+import type {EventType} from '@/domain/event-types';
 import {lumiBillingQuote} from '@/domain/lumi-billing';
 import { NextResponse } from 'next/server';
 import { MissingEnvError } from '@/lib/errors';
@@ -86,12 +88,28 @@ async function handle(request: Request) {
       if (typeof prepared.turnAnchor==='number'&&Number.isSafeInteger(prepared.turnAnchor)&&prepared.turnAnchor>=0) turnAnchor=prepared.turnAnchor;
       if(['spend','remaining','projection','count','active','goal','latest','why','voltage'].includes(String(prepared.monitorRequest))){
         const kind=String(prepared.monitorRequest), monthly=prepared.monitorCalendar===true;
-        const close=await getBillingClose(auth.userId,auth.meter.deviceId);
-        const selectedClose=monthly?null:close;
-        const from=monitorBounds(selectedClose,to).start.toISOString();
-        const monitorSummary=['spend','remaining','projection','goal'].includes(kind)
-          ?await billingSpend(auth.userId,auth.meter,selectedClose,to)
-          :await periodAnomalies(auth.meter.deviceId,from,to,kind==='voltage',auth.meter.thresholds,!monthly&&close===null,detectorIsCurrent(auth.meter,to));
+        const billing = ['spend','remaining','projection','goal'].includes(kind);
+        const close = billing && !monthly ? await getBillingClose(auth.userId, auth.meter.deviceId) : null;
+        const requested = prepared.anomalyPeriod as { from?: string; to?: string } | undefined;
+        const start = Date.parse(requested?.from ?? '');
+        const end = Math.min(Date.parse(requested?.to ?? ''), +to);
+        const restricted = Number.isFinite(start) && Number.isFinite(end) && start <= end;
+        if (requested && !restricted) return reply({ error: 'Revisá las fechas de la consulta.' }, 400);
+        const type = ['LOW_VOLTAGE', 'HIGH_VOLTAGE', 'OVERCURRENT', 'DATA_GAP'].find(
+          (value) => value === prepared.anomalyType,
+        ) as EventType | undefined;
+        const monitorSummary = billing
+          ? await billingSpend(auth.userId, auth.meter, close, to)
+          : await periodAnomalies(
+            auth.meter.deviceId,
+            restricted ? new Date(start).toISOString() : eventBounds('current', to).from,
+            restricted ? new Date(end) : to,
+            kind === 'voltage',
+            auth.meter.thresholds,
+            false,
+            detectorIsCurrent(auth.meter, to),
+            { type, restrictLatest: restricted, includeRecent: prepared.listAnomalies === true },
+          );
         return reply(await lumiService({
           ...action,
           context,

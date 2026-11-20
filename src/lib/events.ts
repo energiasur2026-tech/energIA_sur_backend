@@ -14,6 +14,8 @@ export type OpenEventUpdate = {
 };
 
 export type NewEvent = {
+  /** Umbral aplicado al abrir el episodio (V, A o minutos según el tipo). */
+  detectionThreshold?: number | null;
   deviceId: string;
   type: EventType;
   severity: EventSeverity;
@@ -56,6 +58,8 @@ export async function openOrGetEvent(event: NewEvent): Promise<EventRecord> {
   } catch (error) {
     if (!isUniqueViolation(error)) throw error;
 
+    const sameEpisode = await findEpisode(event);
+    if (sameEpisode) return sameEpisode;
     const open = await getOpenEvents(event.deviceId);
     const existing = open.get(event.type);
     if (existing) return existing;
@@ -70,25 +74,28 @@ function isUniqueViolation(error: unknown): boolean {
   return error instanceof Error && error.message.includes('duplicate key value');
 }
 
+async function findEpisode(event: NewEvent): Promise<EventRecord | null> {
+  const { data, error } = await supabase()
+    .from('events')
+    .select('*')
+    .eq('device_id', event.deviceId)
+    .eq('type', event.type)
+    .eq('started_at', event.startedAt)
+    .order('id', { ascending: false })
+    .limit(1);
+  if (error) throw new Error(`No se pudo buscar el episodio: ${error.message}`);
+  return data?.length ? mapEvent(data[0]) : null;
+}
+
 export async function insertEvent(event: NewEvent): Promise<EventRecord> {
-  if (event.type === 'DATA_GAP' && event.endedAt) {
-    const { data: existing, error: lookupError } = await supabase()
-      .from('events')
-      .select('*')
-      .eq('device_id', event.deviceId)
-      .eq('type', 'DATA_GAP')
-      .eq('started_at', event.startedAt)
-      .eq('ended_at', event.endedAt)
-      .limit(1);
-    if (!lookupError && existing && existing.length > 0) {
-      return mapEvent(existing[0]);
-    }
-  }
+  const existing = await findEpisode(event);
+  if (existing) return existing;
 
   const { data, error } = await supabase()
     .from('events')
     .insert({
       device_id: event.deviceId,
+      detection_threshold: event.detectionThreshold ?? null,
       type: event.type,
       severity: event.severity,
       started_at: event.startedAt,
@@ -103,7 +110,13 @@ export async function insertEvent(event: NewEvent): Promise<EventRecord> {
     .select()
     .single();
 
-  if (error) throw new Error(`No se pudo registrar el evento: ${error.message}`);
+  if (error) {
+    if (error.code === '23505') {
+      const concurrent = await findEpisode(event);
+      if (concurrent) return concurrent;
+    }
+    throw new Error(`No se pudo registrar el evento: ${error.message}`);
+  }
 
   return mapEvent(data);
 }
@@ -121,31 +134,36 @@ export async function updateOpenEvent(id: number, update: OpenEventUpdate) {
       severity: update.severity,
       updated_at: new Date().toISOString(),
     })
-    .eq('id', id);
+    .eq('id', id)
+    .is('ended_at', null)
+    .lte('last_violation_at', update.lastViolationAt);
 
   if (error) throw new Error(`No se pudo actualizar el evento: ${error.message}`);
 }
 
 /**
  * Cierra un evento en el instante de su última violación, no en el momento de
- * la detección: la duración así refleja cuánto duró la anomalía real.
+ * la detección: este dato delimita las lecturas observadas.
  */
 export async function closeEvent(id: number, endedAt: string) {
   const { error } = await supabase()
     .from('events')
     .update({ ended_at: endedAt, updated_at: new Date().toISOString() })
-    .eq('id', id);
+    .eq('id', id)
+    .is('ended_at', null)
+    .lte('last_violation_at', endedAt);
 
   if (error) throw new Error(`No se pudo cerrar el evento: ${error.message}`);
 }
 
 /** Cuántas anomalías siguen abiertas en un medidor (opcionalmente solo de tensión). */
-export async function countActiveEvents(deviceId: string, voltageOnly = false): Promise<number> {
+export async function countActiveEvents(deviceId: string, voltageOnly = false, type?: EventType): Promise<number> {
   const query = supabase()
     .from('events')
     .select('id', { count: 'exact', head: true })
     .eq('device_id', deviceId)
     .is('ended_at', null);
+  if (type) query.eq('type', type);
 
   const { count, error } = await (voltageOnly
     ? query.in('type', ['LOW_VOLTAGE', 'HIGH_VOLTAGE'])
@@ -153,26 +171,6 @@ export async function countActiveEvents(deviceId: string, voltageOnly = false): 
 
   if (error) throw new Error(`No se pudieron contar los eventos activos: ${error.message}`);
 
-  return count ?? 0;
-}
-
-/** Episodios iniciados en `[from, to)`. Los de arrastre se informan en el contador de activos. */
-export async function countPeriodEvents(
-  deviceId: string,
-  from: string,
-  to: string,
-  voltageOnly = false
-): Promise<number> {
-  const query = supabase()
-    .from('events')
-    .select('id', { count: 'exact', head: true })
-    .eq('device_id', deviceId)
-    .gte('started_at', from)
-    .lt('started_at', to);
-  const { count, error } = await (voltageOnly
-    ? query.in('type', ['LOW_VOLTAGE', 'HIGH_VOLTAGE'])
-    : query);
-  if (error) throw new Error('No se pudieron contar los episodios del período.');
   return count ?? 0;
 }
 
@@ -195,36 +193,46 @@ export async function countHistoricalEvents(
   return count ?? 0;
 }
 
-/** Lista de episodios persistidos iniciados en `[from, to)` ordenados del más reciente al más antiguo. */
+/** Episodios iniciados en [from, to). El límite superior es exclusivo. */
 export async function listPeriodEvents(
   deviceId: string,
-  from: string,
-  to: string,
-  voltageOnly = false
+  from: string | null,
+  to: string | null,
+  voltageOnly = false,
+  type?: EventType
 ): Promise<EventRecord[]> {
-  const query = supabase()
-    .from('events')
-    .select('*')
-    .eq('device_id', deviceId)
-    .gte('started_at', from)
-    .lt('started_at', to)
-    .order('started_at', { ascending: false })
-    .limit(500);
-  const { data, error } = await (voltageOnly
-    ? query.in('type', ['LOW_VOLTAGE', 'HIGH_VOLTAGE'])
-    : query);
-  if (error) throw new Error(`No se pudieron leer los eventos del período: ${error.message}`);
-  return (data ?? []).map(mapEvent);
+  const pageSize = 500;
+  const events = new Map<string, EventRecord>();
+  let beforeId: number | undefined;
+  for (;;) {
+    let query = supabase().from('events').select('*').eq('device_id', deviceId);
+    if (from) query = query.gte('started_at', from);
+    if (to) query = query.lt('started_at', to);
+    if (voltageOnly) query = query.in('type', ['LOW_VOLTAGE', 'HIGH_VOLTAGE']);
+    if (type) query = query.eq('type', type);
+    if (beforeId !== undefined) query = query.lt('id', beforeId);
+    const { data, error } = await query.order('id', { ascending: false }).limit(pageSize);
+    if (error) throw new Error(`No se pudieron leer los episodios: ${error.message}`);
+    for (const row of data ?? []) {
+      const event = mapEvent(row);
+      const key = `${event.type}:${Date.parse(event.startedAt)}`;
+      if (!events.has(key) || event.endedAt === null) events.set(key, event);
+    }
+    if (!data || data.length < pageSize) break;
+    beforeId = Number(data[data.length - 1].id);
+  }
+  return Array.from(events.values()).sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt) || b.id - a.id);
 }
 
 /** Último episodio persistido (opcionalmente restringido a tensión). */
-export async function latestEvent(deviceId: string, voltageOnly = false): Promise<EventRecord | null> {
+export async function latestEvent(deviceId: string, voltageOnly = false, type?: EventType): Promise<EventRecord | null> {
   const query = supabase()
     .from('events')
     .select('*')
     .eq('device_id', deviceId)
     .order('started_at', { ascending: false })
     .limit(1);
+  if (type) query.eq('type', type);
   const { data, error } = await (voltageOnly
     ? query.in('type', ['LOW_VOLTAGE', 'HIGH_VOLTAGE'])
     : query);
@@ -276,6 +284,7 @@ export async function listEvents(deviceId: string, limit = 100): Promise<EventRe
 function mapEvent(row: Record<string, unknown>): EventRecord {
   return {
     id: Number(row.id),
+    detectionThreshold: num(row.detection_threshold),
     type: row.type as EventType,
     severity: row.severity as EventSeverity,
     startedAt: String(row.started_at),

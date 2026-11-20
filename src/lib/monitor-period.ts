@@ -2,12 +2,12 @@ import 'server-only';
 import {argentinaMonth,buildMonthlyProjection,calendarMonth} from '@/domain/monthly-projection';
 import {estimatedBillingCycle} from '@/domain/billing-cycle';
 import {estimateEnergyCost} from '@/domain/tariffs';
+import { effectiveGapMinutes } from '@/domain/anomaly-rules';
 import type {EventRecord,EventType} from '@/domain/event-types';
 import type {MeterThresholds} from '@/domain/threshold-types';
 import {
   countActiveEvents,
   countHistoricalEvents,
-  countPeriodEvents,
   latestEvent,
   listPeriodEvents,
 } from './events';
@@ -31,7 +31,7 @@ export function monitorBounds(closedOn: string | null, now: Date) {
 export function detectorIsCurrent(meter: Meter, now: Date): boolean {
   const evaluatedAt = Date.parse(meter.anomaliesEvaluatedAt ?? '');
   const minutes = (+now - evaluatedAt) / 60000;
-  return minutes >= 0 && minutes <= Math.max(meter.thresholds.gapMinutes, Math.ceil(meter.collectionIntervalMinutes * 1.5));
+  return minutes >= 0 && minutes <= effectiveGapMinutes(meter.thresholds, meter.collectionIntervalMinutes);
 }
 
 export async function billingSpend(userId:string,meter:Meter,closedOn:string|null,now:Date) {
@@ -182,6 +182,8 @@ export type PeriodAnomaliesSummary = {
   byType: PeriodAnomalyBreakdown | null;
   latest: (EventRecord & { inPeriod: boolean | null }) | null;
   thresholds: MeterThresholds | null;
+  recent?: EventRecord[];
+  activeInPeriod: number | null;
 };
 
 export async function periodAnomalies(
@@ -191,30 +193,34 @@ export async function periodAnomalies(
   voltageOnly = false,
   thresholds: MeterThresholds | null = null,
   provisional = false,
-  detectionCurrent = false
+  detectionCurrent = false,
+  options: { type?: EventType; restrictLatest?: boolean; includeRecent?: boolean } = {}
 ): Promise<PeriodAnomaliesSummary> {
   const to = now.toISOString();
-  const [activeMatching, totalActive, periodList, count, historicalCount, latestItem] = await Promise.all([
-    countActiveEvents(deviceId, voltageOnly),
-    voltageOnly ? countActiveEvents(deviceId, false) : Promise.resolve(-1),
-    from ? listPeriodEvents(deviceId, from, to, voltageOnly) : Promise.resolve(null),
-    from ? countPeriodEvents(deviceId, from, to, voltageOnly) : Promise.resolve(null),
+  const { type, restrictLatest, includeRecent } = options;
+  const [activeMatching, totalActive, periodList, historicalCount, globalLatest] = await Promise.all([
+    countActiveEvents(deviceId, voltageOnly, type),
+    voltageOnly || type ? countActiveEvents(deviceId) : Promise.resolve(-1),
+    from ? listPeriodEvents(deviceId, from, to, voltageOnly, type) : Promise.resolve(null),
     countHistoricalEvents(deviceId, from, voltageOnly),
-    latestEvent(deviceId, voltageOnly),
+    restrictLatest ? Promise.resolve(null) : latestEvent(deviceId, voltageOnly, type),
   ]);
 
   let byType: PeriodAnomalyBreakdown | null = null;
+  let activeInPeriod: number | null = null;
   let resolved: number | null = null;
-  if (periodList !== null && count === periodList.length) {
+  const count = periodList?.length ?? null;
+  if (periodList !== null) {
     byType = { LOW_VOLTAGE: 0, HIGH_VOLTAGE: 0, OVERCURRENT: 0, DATA_GAP: 0 };
-    let activeInPeriod = 0;
+    activeInPeriod = 0;
     for (const ev of periodList) {
       byType[ev.type] = (byType[ev.type] ?? 0) + 1;
       if (ev.endedAt === null) activeInPeriod += 1;
     }
-    resolved = Math.max(0, count - activeInPeriod);
+    resolved = periodList.length - activeInPeriod;
   }
 
+  const latestItem = restrictLatest ? periodList?.[0] ?? null : globalLatest;
   const inPeriod =
     latestItem && from
       ? Date.parse(latestItem.startedAt) >= Date.parse(from) && Date.parse(latestItem.startedAt) < Date.parse(to)
@@ -227,7 +233,9 @@ export async function periodAnomalies(
     provisional,
     detectionCurrent,
     active: activeMatching,
-    totalActive: voltageOnly ? totalActive : activeMatching,
+    activeInPeriod,
+    ...(includeRecent ? { recent: periodList?.slice(0, 5) ?? [] } : {}),
+    totalActive: voltageOnly || type ? totalActive : activeMatching,
     resolved,
     historicalCount,
     byType,

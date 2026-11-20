@@ -7,7 +7,7 @@
  * lógica de *qué* es una anomalía vive en `anomaly-rules.ts`; acá solo está
  * el *orden* en que se persisten las cosas.
  */
-import { mergeAggregates, planAnomalies, type Episode } from './anomaly-rules';
+import { effectiveGapMinutes, mergeAggregates, planAnomalies, type Episode } from './anomaly-rules';
 import type { AnomalyDeps, EventsPort } from './ports';
 import type { MeterThresholds } from './threshold-types';
 
@@ -61,6 +61,7 @@ export async function detectAnomaliesWith(
     await deps.events.insertClosed({
       deviceId: meter.deviceId,
       type: 'DATA_GAP',
+      detectionThreshold: effectiveGapMinutes(meter.thresholds, meter.collectionIntervalMinutes),
       severity: hueco.severity,
       startedAt: hueco.startedAt,
       endedAt: hueco.endedAt,
@@ -107,11 +108,13 @@ async function aplicarEpisodio(
     const creado = await events.openOrGet({
       deviceId,
       type: episodio.type,
+      detectionThreshold: episodio.detectionThreshold,
       severity: inicial.severity,
       startedAt: episodio.startedAt,
       lastViolationAt: episodio.startedAt,
       ...inicial.aggregates,
     });
+    if (creado.endedAt) return { abierto: false };
     id = creado.id;
     const reusedExisting =
       typeof creado.startedAt === 'string' &&

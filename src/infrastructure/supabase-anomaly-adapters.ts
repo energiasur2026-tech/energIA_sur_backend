@@ -32,6 +32,7 @@ export const supabaseAnomalyDeps: AnomalyDeps = {
       for (const [tipo, e] of abiertos) {
         salida.set(tipo, {
           id: e.id,
+          detectionThreshold: e.detectionThreshold,
           startedAt: e.startedAt,
           lastViolationAt: e.lastViolationAt,
           samples: e.samples,
